@@ -173,7 +173,7 @@ const AuthManager = {
   unlockApp() {
     document.getElementById('screenLogin').style.display = 'none';
     document.getElementById('screenSetup').style.display = 'block';
-    document.body.style.borderTop = "12px solid #e65100"; // ✨ Add orange banner after login
+    document.body.style.borderTop = "12px solid #00b248"; // ✨ Add orange banner after login
     
     let advLabel = document.getElementById('chkAdvancedMode') ? document.getElementById('chkAdvancedMode').parentElement : null;
     let archiveBtn = document.getElementById('btnSessionArchive');

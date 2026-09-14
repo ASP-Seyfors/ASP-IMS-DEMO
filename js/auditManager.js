@@ -665,7 +665,7 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
 .session-notes { background-color: #fff9c4; border-left: 4px solid #fbc02d; padding: 8px 10px; margin-bottom: 15px; font-size: 12px;}
 .alert-box { padding: 8px 12px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; }
 .alert-short { background-color: #ffebee; border-left: 4px solid #c62828; color: #c62828; }
-.alert-over { background-color: #fff3e0; border-left: 4px solid #e65100; color: #e65100; }
+.alert-over { background-color: #fff3e0; border-left: 4px solid #00b248; color: #00b248; }
 .alert-tag { background-color: #e3f2fd; border-left: 4px solid #0277bd; color: #0277bd; }
 @media print {
   body { margin: 0; padding: 15px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -794,9 +794,9 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
       });
 
       if (overages.length > 0) {
-        html += `<div class="section-title" style="border-color:#e65100; color:#e65100;">⚠️ OVERAGES / UNEXPECTED ITEMS</div><div class="alert-box alert-over"><table style="width:100%;"><tr><th>REF</th><th>Expected</th><th>Scanned</th><th>Overage</th></tr>`;
+        html += `<div class="section-title" style="border-color:#00b248; color:#00b248;">⚠️ OVERAGES / UNEXPECTED ITEMS</div><div class="alert-box alert-over"><table style="width:100%;"><tr><th>REF</th><th>Expected</th><th>Scanned</th><th>Overage</th></tr>`;
         overages.forEach(o => {
-          html += `<tr><td><strong>${o.ref}</strong></td><td style="text-align:center;">${o.expected}</td><td style="text-align:center;">${o.scanned}</td><td style="text-align:center; font-weight:bold; color:#e65100;">+${o.overQty}</td></tr>`;
+          html += `<tr><td><strong>${o.ref}</strong></td><td style="text-align:center;">${o.expected}</td><td style="text-align:center;">${o.scanned}</td><td style="text-align:center; font-weight:bold; color:#00b248;">+${o.overQty}</td></tr>`;
         });
         html += `</table></div>`;
       }
@@ -1734,8 +1734,8 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
         ${reservedBinsHtml}
       </div>
 
-      <div class="card" style="border-left: 5px solid #e65100; margin-bottom: 12px;">
-        <h3 style="color:#e65100; margin:0 0 8px 0; font-size:1rem;">🖐️ Outbound Orders Shipped (${shippedItems.reduce((acc, c) => acc + c.outboundQty, 0)} Units)</h3>
+      <div class="card" style="border-left: 5px solid #00b248; margin-bottom: 12px;">
+        <h3 style="color:#00b248; margin:0 0 8px 0; font-size:1rem;">🖐️ Outbound Orders Shipped (${shippedItems.reduce((acc, c) => acc + c.outboundQty, 0)} Units)</h3>
         <div style="max-height: 200px; overflow-y: auto;">
           <table style="width:100%; border-collapse:collapse; font-size:0.8rem; table-layout:fixed;">
             <thead>
@@ -1752,7 +1752,7 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
                   <td style="padding:4px 6px; font-weight:bold; color:#0277bd;">${s.ref}</td>
                   <td style="padding:4px 6px;">${s.lot}</td>
                   <td style="padding:4px 6px;">${s.exp}</td>
-                  <td style="padding:4px 6px; text-align:center; font-weight:bold; color:#e65100;">${s.outboundQty}</td>
+                  <td style="padding:4px 6px; text-align:center; font-weight:bold; color:#00b248;">${s.outboundQty}</td>
                 </tr>`).join('')}
             </tbody>
           </table>

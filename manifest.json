@@ -4,8 +4,8 @@
   "description": "Allied Surgical Products Demonstration Sandbox",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#e65100",
-  "theme_color": "#e65100",
+  "background_color": "#00b248",
+  "theme_color": "#00b248",
   "icons": [
     {
       "src": "ASP_Icon_192_DEMO.png",

@@ -665,7 +665,7 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
 .session-notes { background-color: #fff9c4; border-left: 4px solid #fbc02d; padding: 8px 10px; margin-bottom: 15px; font-size: 12px;}
 .alert-box { padding: 8px 12px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; }
 .alert-short { background-color: #ffebee; border-left: 4px solid #c62828; color: #c62828; }
-.alert-over { background-color: #fff3e0; border-left: 4px solid #00b248; color: #00b248; }
+.alert-over { background-color: #fff3e0; border-left: 4px solid #e65100; color: #e65100; }
 .alert-tag { background-color: #e3f2fd; border-left: 4px solid #0277bd; color: #0277bd; }
 @media print {
   body { margin: 0; padding: 15px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -680,7 +680,7 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
 
 <div class="header-grid">
   <div>
-    <img src="ASP_Box_Web_RGB_DEMO.png" style="max-height: 50px;" alt="ASP Logo" />
+    <img src="ASP_Box_Web_RGB_DEV.png" style="max-height: 50px;" alt="ASP Logo" />
   </div>
   <div class="company-info" style="margin-left: 15px;">
     <h1>Allied Surgical Products</h1>    
@@ -794,9 +794,9 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
       });
 
       if (overages.length > 0) {
-        html += `<div class="section-title" style="border-color:#00b248; color:#00b248;">⚠️ OVERAGES / UNEXPECTED ITEMS</div><div class="alert-box alert-over"><table style="width:100%;"><tr><th>REF</th><th>Expected</th><th>Scanned</th><th>Overage</th></tr>`;
+        html += `<div class="section-title" style="border-color:#e65100; color:#e65100;">⚠️ OVERAGES / UNEXPECTED ITEMS</div><div class="alert-box alert-over"><table style="width:100%;"><tr><th>REF</th><th>Expected</th><th>Scanned</th><th>Overage</th></tr>`;
         overages.forEach(o => {
-          html += `<tr><td><strong>${o.ref}</strong></td><td style="text-align:center;">${o.expected}</td><td style="text-align:center;">${o.scanned}</td><td style="text-align:center; font-weight:bold; color:#00b248;">+${o.overQty}</td></tr>`;
+          html += `<tr><td><strong>${o.ref}</strong></td><td style="text-align:center;">${o.expected}</td><td style="text-align:center;">${o.scanned}</td><td style="text-align:center; font-weight:bold; color:#e65100;">+${o.overQty}</td></tr>`;
         });
         html += `</table></div>`;
       }
@@ -1734,8 +1734,8 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
         ${reservedBinsHtml}
       </div>
 
-      <div class="card" style="border-left: 5px solid #00b248; margin-bottom: 12px;">
-        <h3 style="color:#00b248; margin:0 0 8px 0; font-size:1rem;">🖐️ Outbound Orders Shipped (${shippedItems.reduce((acc, c) => acc + c.outboundQty, 0)} Units)</h3>
+      <div class="card" style="border-left: 5px solid #e65100; margin-bottom: 12px;">
+        <h3 style="color:#e65100; margin:0 0 8px 0; font-size:1rem;">🖐️ Outbound Orders Shipped (${shippedItems.reduce((acc, c) => acc + c.outboundQty, 0)} Units)</h3>
         <div style="max-height: 200px; overflow-y: auto;">
           <table style="width:100%; border-collapse:collapse; font-size:0.8rem; table-layout:fixed;">
             <thead>
@@ -1752,7 +1752,7 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
                   <td style="padding:4px 6px; font-weight:bold; color:#0277bd;">${s.ref}</td>
                   <td style="padding:4px 6px;">${s.lot}</td>
                   <td style="padding:4px 6px;">${s.exp}</td>
-                  <td style="padding:4px 6px; text-align:center; font-weight:bold; color:#00b248;">${s.outboundQty}</td>
+                  <td style="padding:4px 6px; text-align:center; font-weight:bold; color:#e65100;">${s.outboundQty}</td>
                 </tr>`).join('')}
             </tbody>
           </table>
@@ -1817,7 +1817,7 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
 <body>
 <div class="header-grid">
 <div>
-  <img src="ASP_Box_Web_RGB_DEMO.png" style="max-height: 65px;" alt="ASP Logo" />
+  <img src="ASP_Box_Web_RGB_DEV.png" style="max-height: 65px;" alt="ASP Logo" />
 </div>
 <div class="company-info" style="margin-left: 20px;">
   <h1>Allied Surgical Products</h1>
@@ -2118,7 +2118,7 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
         let row = [
           `"${handle}"`, `"${title}"`, `"${desc}"`, `"${vendor}"`, `"${cat}"`, `"${cat}"`, `"${published}"`, 
           `"${optName}"`, `"${optValue}"`, `"${ref}"`, `"shopify"`, `${avail}`, `"deny"`, `"manual"`, 
-          `"${cleanPrice.toFixed(2)}"`, `"${gtin}"`, `"https://asp-seyfors.github.io/ASP-IMS-DEV/ASP_Box_Web_RGB_DEMO.png"`, `"${status}"`
+          `"${cleanPrice.toFixed(2)}"`, `"${gtin}"`, `"https://asp-seyfors.github.io/ASP-IMS-DEV/ASP_Box_Web_RGB_DEV.png"`, `"${status}"`
         ];
         csvContent += row.join(',') + '\n';
       });
@@ -2708,7 +2708,8 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
         desc: item.desc,
         mfr: item.mfr,
         gtin: item.gtin,
-        categories: item.categories || "",
+        category: item.category || "Surgical Supply",
+        shopifyCategory: item.shopifyCategory || "Business & Industrial > Medical > Medical Supplies",
         availableQty: total - res,
         price: item.price || "$0.00"
       };
@@ -2749,10 +2750,8 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
         title: String(handleRef),
         desc: String(item.desc || ''),
         mfr: String(item.mfr || 'Unknown'),
-        
-        // ✨ FIX: Mapped to the specific Shopify Category column value
-        category: String(item.shopifyCategory || item.category || 'Business & Industrial > Medical > Medical Supplies'),
-        
+        category: String(item.category || 'Surgical Supply'),
+        shopifyCategory: String(item.shopifyCategory || 'Business & Industrial > Medical > Medical Supplies'),
         gtin: String(item.gtin || ''),
         availableQty: avail, 
         price: cleanPrice.toFixed(2),

@@ -115,7 +115,7 @@ const ScannerManager = {
           this.html5QrCode.clear();
           camContainer.style.display = 'none';
           camBtn.textContent = '📷 Open Camera';
-          camBtn.style.backgroundColor = '#00b248';
+          camBtn.style.backgroundColor = '#e65100';
           this.isCameraActive = false;
         }).catch(() => { camContainer.style.display = 'none'; this.isCameraActive = false; });
       } else {

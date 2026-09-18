@@ -220,7 +220,13 @@ const SessionManager = {
       if (data.status === "success" && data.allocations) {
         let allocMap = {};
         data.allocations.forEach(a => {
-          let cleanCustName = String(a.customerName).trim().toUpperCase(); // ✨ FIX: Force uppercase to match Engine math
+          // ✨ FIX: Run incoming cloud data through the Alias Resolver to auto-merge legacy/manual sheet entries!
+          let rawCustName = String(a.customerName).trim();
+          let resolvedName = (typeof DatabaseManager !== 'undefined' && typeof DatabaseManager.resolveAlias === 'function') 
+              ? DatabaseManager.resolveAlias(rawCustName, 'customer') 
+              : rawCustName;
+              
+          let cleanCustName = resolvedName.toUpperCase(); 
           
           if (!allocMap[cleanCustName]) allocMap[cleanCustName] = {};
           
@@ -362,44 +368,64 @@ const SessionManager = {
   async fetchStagedSessions(silent = false) {
     if (!this.getActiveFeederUrl() || this.getActiveFeederUrl().includes("YOUR_")) return;
 
+    this.fetchedStagedData = {};
+    let manualData = { stagedSessions: {} };
+    let qboData = { stagedSessions: {} };
+
+    // 1. Fetch Manual Orders from the Feeder URL (Safely)
     try {
-      let res = await fetch(this.getActiveFeederUrl());
-      let data = await res.json();
-      
-      this.fetchedStagedData = data.stagedSessions || {};
-      
-      if (data.customerAnalytics) {
-        localStorage.setItem('asp_remote_analytics', JSON.stringify(data.customerAnalytics));
-        localStorage.setItem('asp_remote_customers', JSON.stringify(data.customerList));
+      let manualRes = await fetch(this.getActiveFeederUrl());
+      let manualText = await manualRes.text();
+      if (manualText.trim().startsWith('{')) {
+          manualData = JSON.parse(manualText);
       }
-      
-      let select = document.getElementById('stagedOrdersSelect');
-      if (select) {
-        select.innerHTML = '<option value="">-- Select Staged Order --</option>';
-        let count = 0;
-        for (let sessionName in this.fetchedStagedData) {
-          let sessionObj = this.fetchedStagedData[sessionName];
-          let items = Array.isArray(sessionObj) ? sessionObj : (sessionObj.items || []);
-          if (sessionObj.isCompleted === true || sessionObj.status === 'COMPLETED') continue;
+    } catch (e) { console.warn("Manual Orders Feed failed:", e); }
 
-          let opt = document.createElement('option');
-          opt.value = sessionName;
-          opt.textContent = `📦 ${sessionName} (${items.length} items)`;
-          select.appendChild(opt);
-          count++;
-        }
-
-        if (typeof UIManager !== 'undefined' && UIManager.populateCustomerDropdown) {
-          UIManager.populateCustomerDropdown();
-        }
-
-        if (!silent) {
-          if (count > 0) alert(`Successfully synced! Found ${count} staged orders and updated Customer Analytics.`);
-          else alert("Synced successfully, but no staged orders found on the ASP_Scanner_Feed tab.");
-        }
+    // 2. Fetch QBO Invoices from the Database URL (Safely)
+    try {
+      let qboRes = await fetch(`${this.getActiveArchiveUrl()}?action=GET_QBO_FEED`);
+      let qboText = await qboRes.text();
+      if (qboText.trim().startsWith('{')) {
+          qboData = JSON.parse(qboText);
       }
-    } catch (err) {
-      if (!silent) alert("Error syncing feed: " + err.message);
+    } catch (e) { console.warn("QBO Feed failed:", e); }
+
+    // Merge the session data safely
+    this.fetchedStagedData = {
+        ...(manualData.stagedSessions || {}),
+        ...(qboData.stagedSessions || {})
+    };
+    
+    // Preserve the Customer Analytics from the Orders Script
+    if (manualData.customerAnalytics) {
+      localStorage.setItem('asp_remote_analytics', JSON.stringify(manualData.customerAnalytics));
+      localStorage.setItem('asp_remote_customers', JSON.stringify(manualData.customerList));
+    }
+    
+    let select = document.getElementById('stagedOrdersSelect');
+    if (select) {
+      select.innerHTML = '<option value="">-- Select Staged Order --</option>';
+      let count = 0;
+      for (let sessionName in this.fetchedStagedData) {
+        let sessionObj = this.fetchedStagedData[sessionName];
+        let items = Array.isArray(sessionObj) ? sessionObj : (sessionObj.items || []);
+        if (sessionObj.isCompleted === true || sessionObj.status === 'COMPLETED') continue;
+
+        let opt = document.createElement('option');
+        opt.value = sessionName;
+        opt.textContent = `📦 ${sessionName} (${items.length} items)`;
+        select.appendChild(opt);
+        count++;
+      }
+
+      if (typeof UIManager !== 'undefined' && UIManager.populateCustomerDropdown) {
+        UIManager.populateCustomerDropdown();
+      }
+
+      if (!silent) {
+        if (count > 0) alert(`Successfully synced! Found ${count} staged orders and updated Customer Analytics.`);
+        else alert("Synced successfully, but no staged orders found in either feed.");
+      }
     }
   },
 
@@ -414,10 +440,11 @@ const SessionManager = {
     if (btn && !silent) { btn.textContent = "⏳ Fetching QBO..."; btn.disabled = true; btn.style.opacity = "0.7"; }
 
     try {
-      await fetch(this.getActiveFeederUrl(), {
+      // ✨ THE FIX: Target the Archive URL (Database Script) where QBO_Engine actually lives!
+      await fetch(this.getActiveArchiveUrl(), {
         method: 'POST',
         mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
         body: JSON.stringify({ action: "FETCH_QBO" })
       });
 
@@ -1236,22 +1263,34 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
   },
 
   saveItemLog(ignoreOverpack = false) {
-    let rawGtin = document.getElementById('gtinInput').value.trim();
-    if (rawGtin.toUpperCase() === "N/A" || rawGtin.toUpperCase() === "NA") rawGtin = "";
-    
-    let ref = document.getElementById('refInput').value.trim().toUpperCase();
-    let lot = document.getElementById('lotInput').value.trim().toUpperCase();
-    if (lot === "N/A" || lot === "NA" || lot === "NO_LOT") lot = "";
-    
-    let exp = document.getElementById('expInput').value.trim();
-    if (exp.toUpperCase() === "N/A" || exp.toUpperCase() === "NA" || exp === "NO_EXP") exp = "";
-    
-    const vendor = document.getElementById('vendorSelect').value;
-    let qty = parseInt(document.getElementById('qtyInput').value, 10) || 1;
-    
-    const itemCust = document.getElementById('itemCustomerSelect') ? document.getElementById('itemCustomerSelect').value : '';
-    const itemOrder = document.getElementById('itemOrderNumInput') ? document.getElementById('itemOrderNumInput').value.trim() : '';
-    const iNote = document.getElementById('itemNoteInput') ? document.getElementById('itemNoteInput').value.trim() : '';
+        let rawGtin = document.getElementById('gtinInput').value.trim();
+        if (rawGtin.toUpperCase() === "N/A" || rawGtin.toUpperCase() === "NA") rawGtin = "";
+        
+        let ref = document.getElementById('refInput').value.trim().toUpperCase();
+        let lot = document.getElementById('lotInput').value.trim().toUpperCase();
+        if (lot === "N/A" || lot === "NA" || lot === "NO_LOT") lot = "";
+        
+        let exp = document.getElementById('expInput').value.trim();
+        if (exp.toUpperCase() === "N/A" || exp.toUpperCase() === "NA" || exp === "NO_EXP") exp = "";
+        
+        const vendor = document.getElementById('vendorSelect').value;
+        let qty = parseInt(document.getElementById('qtyInput').value, 10) || 1;
+        
+        // Changed const to let so we can mutate it
+        let itemCust = document.getElementById('itemCustomerSelect') ? document.getElementById('itemCustomerSelect').value.trim() : '';
+        const itemOrder = document.getElementById('itemOrderNumInput') ? document.getElementById('itemOrderNumInput').value.trim() : '';
+        const iNote = document.getElementById('itemNoteInput') ? document.getElementById('itemNoteInput').value.trim() : '';
+
+        // ✨ V5.1 PATCH: Enforce Strict Proper Case for Customer Names
+        if (itemCust) {
+            let upperTag = itemCust.toUpperCase();
+            let masterCustList = DatabaseManager.dbRaw && DatabaseManager.dbRaw.customers ? DatabaseManager.dbRaw.customers : [];
+            let matchedCust = masterCustList.find(c => String(c).toUpperCase().trim() === upperTag);
+            
+            if (matchedCust) {
+                itemCust = matchedCust; // Force it to the exact case from the DB
+            }
+        }
 
     let cTag = itemCust.trim();
     if (cTag && typeof DatabaseManager !== 'undefined' && typeof DatabaseManager.resolveAlias === 'function') {
@@ -1281,6 +1320,15 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
     let uMult = 1;
 
     if (isNewItem) {
+       // ✨ V5.1 PATCH: Block new item creation during outbound orders
+       let isOutbound = this.currentWorkflowType && (this.currentWorkflowType.toUpperCase().includes('ORDER') || this.currentWorkflowType.toUpperCase().includes('PACK'));
+       
+       if (isOutbound) {
+           UIManager.showCustomAlert("Action Blocked", `You are packing an outbound order, but the barcode ${ref} does not exist in the database. Please process this item through a Receiving session first to establish its identity.`);
+           return;
+       }
+       // -----------------------------------------------------------
+
        let bundleChk = document.getElementById('chkIsBundle');
        let isBundle = bundleChk && bundleChk.checked;
        
@@ -1294,7 +1342,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
        }
 
        let confirmNew = confirm(`⚠️ UNRECOGNIZED REF DETECTED ⚠️\n\nThe REF/SKU "${ref}" does not exist in the master database.\n\nAre you sure you want to create a BRAND NEW item?`);
-       if (!confirmNew) return; 
+       if (!confirmNew) return;
 
        let alreadyPending = this.pendingNewItems.find(i => i.ref === ref);
        if (!alreadyPending) {
@@ -1305,7 +1353,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
                syncedThrive: "FALSE", syncedShopify: "FALSE",
                desc: "Navigate to vendor website for item description.", 
                category: "General", 
-               shopifyCategory: "Business & Industrial > Medical > Medical Supplies", 
+               shopifyCategory: "Medical Supplies", 
                status: "INACTIVE",
                parentRef: pRef, uomMult: uMult, shelf: ""
            });
@@ -1326,7 +1374,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
                        syncedThrive: "FALSE", syncedShopify: "FALSE",
                        desc: "Navigate to vendor website for item description.", 
                        category: "General", 
-                       shopifyCategory: "Business & Industrial > Medical > Medical Supplies", 
+                       shopifyCategory: "Medical Supplies", 
                        status: "INACTIVE",
                        parentRef: "", uomMult: 1, shelf: ""
                    });
@@ -1466,7 +1514,10 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
       
       if (data.status === "success" && data.desc) {
          let input = document.getElementById(`advDesc_${index}`);
-         if (input) input.value = data.desc;
+         if (input) {
+             input.value = data.desc;
+             input.setAttribute('data-autofetched', 'true'); // ✨ THE FIX: Mark this as a successful AI fetch
+         }
          if (btn) { btn.textContent = "✅ Success"; btn.style.backgroundColor = "#2e7d32"; }
       } else {
          throw new Error(data.message || "Parse failed.");
@@ -1500,8 +1551,13 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
       let searchUrl = this.getVendorSearchUrl(item.mfr, item.ref);
       let isEthicon = (item.mfr || '').toUpperCase().includes('ETHICON');
       
-      // ✨ NEW: Only render the Auto-Fetch button if it's an Ethicon product
-      let ethiconBtnHtml = isEthicon ? `<button id="btnEthiconFetch_${index}" class="btn-small" style="background-color:#f57f17; color:#ffffff; padding: 4px 10px;" onclick="SessionManager.autoFetchEthicon('${item.ref}', ${index})">⚡ Auto-Fetch</button>` : '';
+      // ✨ FIX: Added the Suture Checkbox right next to the Auto-Fetch Button
+      let ethiconBtnHtml = isEthicon ? `
+        <label style="font-size:0.85rem; font-weight:bold; color:#c62828; display:flex; align-items:center; gap:4px; margin-right:8px;">
+          <input type="checkbox" id="chkSuture_${index}"> Suture?
+        </label>
+        <button id="btnEthiconFetch_${index}" class="btn-small" style="background-color:#f57f17; color:#ffffff; padding: 4px 10px;" onclick="SessionManager.autoFetchEthicon('${item.ref}', ${index})">⚡ Auto-Fetch</button>
+      ` : '';
 
       let div = document.createElement('div');
       div.style.marginBottom = '10px';
@@ -1532,23 +1588,55 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
     const inputs = document.querySelectorAll('.adv-desc-input');
     let updatedCount = 0;
 
-    inputs.forEach(input => {
+    inputs.forEach((input, index) => {
       let rawDesc = input.value.trim();
       let ref = input.getAttribute('data-ref');
       let mfr = input.getAttribute('data-mfr');
       
       if (rawDesc && rawDesc !== "Navigate to vendor website for item description.") {
-        let newDesc = `${mfr} ${rawDesc} ${ref}`.replace(/\s+/g, ' ').trim();
         
+        let finalDesc = "";
+        let finalCategory = "General";
+        
+        // Grab the Suture checkbox state dynamically
+        let sutureChk = document.getElementById(`chkSuture_${index}`);
+        let isSuture = sutureChk && sutureChk.checked;
+        let isAutoFetched = input.getAttribute('data-autofetched') === 'true'; // ✨ Check the flag
+        
+        if (isSuture && isAutoFetched) {
+            // ONLY append the Box math if the AI Auto-Fetch actually worked
+            finalCategory = "Suture";
+            let lastChar = ref.slice(-1).toUpperCase();
+            let boxQtyStr = "";
+            let refBase = ref; 
+            
+            if (lastChar === 'G') { boxQtyStr = "(BX/12)"; refBase = ref.slice(0, -1); }
+            else if (lastChar === 'T') { boxQtyStr = "(BX/24)"; refBase = ref.slice(0, -1); }
+            else if (lastChar === 'H') { boxQtyStr = "(BX/36)"; refBase = ref.slice(0, -1); }
+            
+            finalDesc = `${mfr} ${rawDesc} ${boxQtyStr} ${refBase}`.replace(/\s+/g, ' ').trim();
+        } else {
+            // If they typed it manually, just save what they typed
+            if (isSuture) finalCategory = "Suture"; 
+            finalDesc = `${mfr} ${rawDesc} ${ref}`.replace(/\s+/g, ' ').trim();
+        }
+        
+        // Apply the new Desc and Category to the local cache memory
         let pendingItem = this.pendingNewItems.find(i => i.ref === ref);
-        if (pendingItem) pendingItem.desc = newDesc;
+        if (pendingItem) {
+            pendingItem.desc = finalDesc;
+            if (isSuture) pendingItem.category = finalCategory;
+        }
 
         let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref.toUpperCase());
-        if (dbItem) dbItem.desc = newDesc;
+        if (dbItem) {
+            dbItem.desc = finalDesc;
+            if (isSuture) dbItem.category = finalCategory;
+        }
 
         this.scannedObjects.forEach(scanned => {
           if (scanned.ref === ref && scanned.isNew) {
-            scanned.desc = newDesc;
+            scanned.desc = finalDesc;
           }
         });
         updatedCount++;
@@ -1706,61 +1794,14 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
             networkTasks.push(this.pushQboWriteBack(completedSessionObj));
         }
 
-        // ✨ NEW: Targeted Shopify Sync with strict string-casting
-        let shopifyItems = [];
-        this.scannedObjects.forEach(scan => {
-            let parentRef = scan.ref.toUpperCase();
-            let parentDb = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === parentRef);
-            
-            if (parentDb) {
-                let pTotal = parseInt(parentDb.onHand || 0, 10);
-                let pRes = parseInt(parentDb.reservedQty || 0, 10);
-                let pCleanPrice = parseFloat(String(parentDb.price || '').replace(/[^0-9.-]+/g, '')) || 0;
-                let pHandle = String(parentDb.sku || parentDb.ref).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
-
-                shopifyItems.push({
-                    ref: String(parentDb.sku || parentDb.ref),
-                    handle: pHandle,
-                    title: String(parentDb.sku || parentDb.ref),
-                    desc: String(parentDb.desc || ''),
-                    mfr: String(parentDb.mfr || 'Unknown'),
-                    category: String(parentDb.category || 'Surgical Supply'),
-                    shopifyCategory: String(parentDb.shopifyCategory || 'Business & Industrial > Medical > Medical Supplies'),
-                    gtin: String(parentDb.gtin || ''),
-                    availableQty: String(pTotal - pRes),
-                    price: pCleanPrice.toFixed(2),
-                    status: pCleanPrice > 0 ? "active" : "draft",
-                    isBundle: false,
-                    uomMult: 1
-                });
-
-                let childBundles = DatabaseManager.db.filter(i => String(i.parentRef || '').toUpperCase() === parentRef && parseInt(i.uomMult, 10) > 1);
-                childBundles.forEach(bundle => {
-                    let bCleanPrice = parseFloat(String(bundle.price || '').replace(/[^0-9.-]+/g, '')) || 0;
-                    shopifyItems.push({
-                        ref: String(bundle.sku || bundle.ref),
-                        handle: pHandle,
-                        title: String(parentDb.sku || parentDb.ref),
-                        desc: String(bundle.desc || parentDb.desc || ''),
-                        mfr: String(parentDb.mfr || 'Unknown'),
-                        category: String(parentDb.category || 'Surgical Supply'),
-                        shopifyCategory: String(parentDb.shopifyCategory || 'Business & Industrial > Medical > Medical Supplies'),
-                        gtin: String(parentDb.gtin || ''),
-                        availableQty: String(Math.floor((pTotal - pRes) / parseInt(bundle.uomMult, 10))),
-                        price: bCleanPrice.toFixed(2),
-                        status: bCleanPrice > 0 ? "active" : "draft",
-                        isBundle: true,
-                        uomMult: bundle.uomMult
-                    });
-                });
-            }
-        });
+        // ✨ NEW: Call the centralized Shopify Payload Builder
+        let refsToSync = this.scannedObjects.map(scan => scan.ref);
+        let shopifyUpdatePayload = DatabaseManager.buildShopifyPayload(refsToSync);
         
-        let uniqueShopifySync = Array.from(new Map(shopifyItems.map(i => [i.ref, i])).values());
-        if (uniqueShopifySync.length > 0 && archiveUrl) {
+        if (shopifyUpdatePayload.length > 0 && archiveUrl) {
             networkTasks.push(fetch(archiveUrl, { 
                 method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
-                body: JSON.stringify({ action: "SYNC_SHOPIFY_SANDBOX", payload: uniqueShopifySync }) 
+                body: JSON.stringify({ action: "SYNC_SHOPIFY_SANDBOX", payload: shopifyUpdatePayload }) 
             }).catch(e => console.warn("Shopify background sync failed")));
         }
 
@@ -2459,7 +2500,8 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
     };
 
     try {
-      await fetch(this.getActiveFeederUrl(), { 
+      // ✨ THE FIX: Target the Archive URL (Database Script) where QBO_Engine actually lives!
+      await fetch(this.getActiveArchiveUrl(), { 
         method: 'POST',
         mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -2512,7 +2554,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
       if (!custName) return;
       
       let binModal = document.getElementById('binViewerModal');
-      if (binModal) binModal.remove();
+      if (binModal) binModal.style.display = 'none'; // ✨ FIX: Hide it instead of destroying the HTML!
 
       // 🚨 THE FIX: Use the exact uppercase key, bypassing the alias resolver
       let targetKey = custName.toUpperCase();
@@ -2535,7 +2577,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
           if (itemData && itemData.details && itemData.details.length > 0) {
               itemData.details.forEach((det) => {
                   if (det.qty > 0) {
-                      html += `<label style="display:block; padding:8px; border-bottom:1px solid #eee; cursor:pointer;"><input type="checkbox" class="unreserve-chk" data-ref="${ref}" data-lot="${det.lot || ''}" data-exp="${det.exp || ''}" data-qty="${det.qty}" data-session="${det.sessionId || ''}"> <strong>${ref}</strong> (Qty: ${det.qty})<br><span style="font-size:0.8rem; color:#666;">Lot: ${det.lot || 'N/A'} | Exp: ${det.exp || 'N/A'}</span><br><span style="font-size:0.8rem; color:#888;">${dbItem.desc}</span></label>`;
+                      html += `<label style="display:block; padding:8px; border-bottom:1px solid #eee; cursor:pointer;"><input type="checkbox" class="unreserve-chk" data-ref="${ref}" data-lot="${det.lot || ''}" data-exp="${det.exp || ''}" data-qty="${det.qty}" data-session="${det.sessionId || ''}"> <strong>${ref}</strong> (Qty: ${det.qty})<br><span style="font-size:0.8rem; color: var(--text-main);">Lot: ${det.lot || 'N/A'} | Exp: ${det.exp || 'N/A'}</span><br><span style="font-size:0.8rem; color: var(--text-main);">${dbItem.desc}</span></label>`;
                   }
               });
           }
@@ -2551,7 +2593,6 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
       btn.textContent = "⏳ Un-Reserving..."; btn.disabled = true;
       
       try {
-          // 🚨 THE FIX: Force uppercase when pulling the customer name from the DOM
           let custName = document.getElementById('unreserveCustomerName').innerText.toUpperCase();
           let checkboxes = document.querySelectorAll('.unreserve-chk:checked');
           
@@ -2560,125 +2601,128 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
               return;
           }
 
-      let allocations = JSON.parse(localStorage.getItem('asp_allocations')) || {};
-      let unreservedItems = [];
-      let shopifySyncPayload = [];
-      
-      checkboxes.forEach(chk => {
-          let ref = chk.getAttribute('data-ref');
-          let lot = chk.getAttribute('data-lot');
-          let exp = chk.getAttribute('data-exp');
-          let qty = parseInt(chk.getAttribute('data-qty'), 10) || 0;
-          let sessionId = chk.getAttribute('data-session');
+          // 1. Render the dynamic processing overlay
+          let overlay = document.createElement('div');
+          overlay.id = 'unreserveOverlay';
+          overlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:999999; display:flex; flex-direction:column; justify-content:center; align-items:center; color:#fff;';
+          overlay.innerHTML = `
+            <div style="background:#fff; border-radius:8px; width:100%; max-width:400px; padding:20px; box-shadow:0 4px 20px rgba(0,0,0,0.5); text-align:center;">
+              <h3 style="margin:0 0 15px 0; color:#d32f2f;">🔄 Processing Un-Reserve</h3>
+              <div style="margin-bottom:15px; font-weight:bold; color:#555;">⏳ Adjusting inventory and syncing to the cloud...</div>
+              <div style="width:100%; background:#eee; border-radius:4px; height:8px; overflow:hidden;">
+                <div style="width:100%; height:100%; background:#d32f2f; animation: pulse 1.5s infinite;"></div>
+              </div>
+            </div>
+          `;
+          document.body.appendChild(overlay);
 
-          // 1. Remove from local Allocations memory
-          if (allocations[custName] && allocations[custName][ref]) {
-              let itemData = allocations[custName][ref];
-              if (itemData.details) {
-                  let detIndex = itemData.details.findIndex(d => d.lot === lot && d.exp === exp && d.sessionId === sessionId);
-                  if (detIndex > -1) itemData.details.splice(detIndex, 1);
-                  itemData.qty -= qty;
-                  if (itemData.qty <= 0) delete allocations[custName][ref];
-              } else if (itemData.qty !== undefined) {
-                  itemData.qty -= qty;
-                  if (itemData.qty <= 0) delete allocations[custName][ref];
+          let allocations = JSON.parse(localStorage.getItem('asp_allocations')) || {};
+          let unreservedItems = [];
+          
+          // 2. Adjust local memory
+          checkboxes.forEach(chk => {
+              let ref = chk.getAttribute('data-ref');
+              let lot = chk.getAttribute('data-lot');
+              let exp = chk.getAttribute('data-exp');
+              let qty = parseInt(chk.getAttribute('data-qty'), 10) || 0;
+              let sessionId = chk.getAttribute('data-session');
+
+              if (allocations[custName] && allocations[custName][ref]) {
+                  let itemData = allocations[custName][ref];
+                  if (itemData.details) {
+                      let detIndex = itemData.details.findIndex(d => d.lot === lot && d.exp === exp && d.sessionId === sessionId);
+                      if (detIndex > -1) itemData.details.splice(detIndex, 1);
+                      itemData.qty -= qty;
+                      if (itemData.qty <= 0) delete allocations[custName][ref];
+                  } else if (itemData.qty !== undefined) {
+                      itemData.qty -= qty;
+                      if (itemData.qty <= 0) delete allocations[custName][ref];
+                  }
+                  if (Object.keys(allocations[custName]).length === 0) delete allocations[custName];
               }
-              if (Object.keys(allocations[custName]).length === 0) delete allocations[custName];
-          }
 
-          // 2. Mathematically deduct the Reserved Qty in the Master DB
-          let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref.toUpperCase());
-          if (dbItem) {
-              dbItem.reservedQty = Math.max(0, (dbItem.reservedQty || 0) - qty);
-              let availableQty = (parseInt(dbItem.onHand, 10) || 0) - dbItem.reservedQty;
-
-              // 3. Package the newly available item for Shopify
-              if (String(dbItem.syncedShopify).toUpperCase() === 'TRUE') {
-                  let handleRef = (dbItem.parentRef && parseInt(dbItem.uomMult, 10) > 1) ? dbItem.parentRef : ref;
-                  let handle = String(handleRef).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
-                  let cleanPrice = parseFloat(String(dbItem.price).replace(/[^0-9.-]+/g, '')) || 0;
-                  let intendedStatus = cleanPrice > 0 ? "active" : "draft";
-
-                  shopifySyncPayload.push({
-                      ref: ref, handle: handle, title: String(handleRef), desc: String(dbItem.desc || ''), mfr: String(dbItem.mfr || 'Unknown'),
-                      category: String(dbItem.category || 'Surgical Supply'),
-                      shopifyCategory: String(dbItem.shopifyCategory || 'Business & Industrial > Medical > Medical Supplies'),
-                      gtin: String(dbItem.gtin || ''), availableQty: String(availableQty), price: cleanPrice.toFixed(2),
-                      status: intendedStatus, isBundle: (dbItem.parentRef && parseInt(dbItem.uomMult, 10) > 1), uomMult: dbItem.uomMult || 1
-                  });
+              let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref.toUpperCase());
+              if (dbItem) {
+                  dbItem.reservedQty = Math.max(0, (dbItem.reservedQty || 0) - qty);
               }
-          }
 
-          // 4. Log for Cloud Archive Traceability
-          unreservedItems.push({
-              ref: ref, lot: lot || "N/A", exp: exp || "N/A", qty: qty,
-              actionTag: "Un-Reserved", customerTag: custName, isNew: false, sessionId: Date.now().toString(),
-              itemNote: "Un-Reserved from Bin"
+              unreservedItems.push({
+                  ref: ref, lot: lot || "N/A", exp: exp || "N/A", qty: qty,
+                  actionTag: "Un-Reserved", customerTag: custName, isNew: false, sessionId: Date.now().toString(),
+                  itemNote: "Un-Reserved from Bin"
+              });
           });
-      });
 
-      // Save local memory
-      localStorage.setItem('asp_allocations', JSON.stringify(allocations));
-      localStorage.setItem('asp_wh_db', JSON.stringify(DatabaseManager.db));
-      document.getElementById('modalUnreserve').style.display = 'none';
+          localStorage.setItem('asp_allocations', JSON.stringify(allocations));
+          localStorage.setItem('asp_wh_db', JSON.stringify(DatabaseManager.db));
+          document.getElementById('modalUnreserve').style.display = 'none';
 
-      // 5. Fire all updates to the cloud seamlessly
-      this.syncAllocationsToCloud();
+          this.syncAllocationsToCloud();
 
-      let cleanCustomers = DatabaseManager.customers.filter(c => !c.startsWith("+") && c !== "#ERROR!");
-      let cleanSuppliers = DatabaseManager.suppliers.filter(s => !s.startsWith("+") && s !== "#ERROR!");
-      let cleanVendors = DatabaseManager.vendors.filter(v => !v.startsWith("+") && v !== "#ERROR!");
+          let cleanCustomers = DatabaseManager.customers.filter(c => !c.startsWith("+") && c !== "#ERROR!");
+          let cleanSuppliers = DatabaseManager.suppliers.filter(s => !s.startsWith("+") && s !== "#ERROR!");
+          let cleanVendors = DatabaseManager.vendors.filter(v => !v.startsWith("+") && v !== "#ERROR!");
 
-      let networkTasks = [];
+          let networkTasks = [];
 
-      networkTasks.push(
-          fetch(this.getActiveArchiveUrl(), {
-              method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: JSON.stringify({ action: "SYNC_LOCAL_DB", payload: { items: DatabaseManager.db, customers: cleanCustomers, suppliers: cleanSuppliers, vendors: cleanVendors } })
-          })
-      );
-
-      if (shopifySyncPayload.length > 0) {
           networkTasks.push(
               fetch(this.getActiveArchiveUrl(), {
                   method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                  body: JSON.stringify({ action: "SYNC_SHOPIFY_SANDBOX", payload: shopifySyncPayload })
+                  body: JSON.stringify({ action: "SYNC_LOCAL_DB", payload: { items: DatabaseManager.db, customers: cleanCustomers, suppliers: cleanSuppliers, vendors: cleanVendors } })
               })
           );
-      }
 
-      // Generate the Ghost Session for the Audit Log
-      let uNameInput = document.getElementById('userNameInput');
-      let userName = uNameInput && uNameInput.value ? uNameInput.value.trim() : "Operator";
+          // 3. Robust Shopify Taxonomy Sync using Centralized Builder
+          let refsToSync = unreservedItems.map(scan => scan.ref);
+          let shopifySyncPayload = DatabaseManager.buildShopifyPayload(refsToSync);
+          
+          if (shopifySyncPayload.length > 0) {
+              networkTasks.push(fetch(this.getActiveArchiveUrl(), { 
+                  method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+                  body: JSON.stringify({ action: "SYNC_SHOPIFY_SANDBOX", payload: shopifySyncPayload }) 
+              }).catch(e => console.warn("Shopify background sync failed")));
+          }
 
-      let auditPayload = {
-          id: Date.now().toString(), status: "Completed", userName: userName,
-          sessionName: `Un-Reserve: ${custName}`, orderNum: "", workflowType: "Un-Reserve",
-          dateStr: new Date().toLocaleDateString().replace(/\//g, '.'), startStr: new Date().toLocaleTimeString(),
-          manifestEnabled: false, expectedManifest: [], scannedObjects: unreservedItems,
-          pendingNewItems: [], pendingUpdates: [], lastUpdated: Date.now()
-      };
+          // 4. Submit Ghost Session to Audit Log
+          let uNameInput = document.getElementById('userNameInput');
+          let userName = uNameInput && uNameInput.value ? uNameInput.value.trim() : "Operator";
 
-      let localArchive = JSON.parse(localStorage.getItem('asp_session_archive')) || [];
-      localArchive.unshift(auditPayload);
-      localStorage.setItem('asp_session_archive', JSON.stringify(localArchive));
+          let auditPayload = {
+              id: Date.now().toString(), status: "Completed", userName: userName,
+              sessionName: `Un-Reserve: ${custName}`, orderNum: "", workflowType: "Un-Reserve",
+              dateStr: new Date().toLocaleDateString().replace(/\//g, '.'), startStr: new Date().toLocaleTimeString(),
+              manifestEnabled: false, expectedManifest: [], scannedObjects: unreservedItems,
+              pendingNewItems: [], pendingUpdates: [], lastUpdated: Date.now()
+          };
 
-      networkTasks.push(
-          fetch(this.getActiveArchiveUrl(), {
-              method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: JSON.stringify({ action: "ARCHIVE_SESSION", payload: auditPayload })
-          })
-      );
+          let localArchive = JSON.parse(localStorage.getItem('asp_session_archive')) || [];
+          localArchive.unshift(auditPayload);
+          localStorage.setItem('asp_session_archive', JSON.stringify(localArchive));
 
-      // Await all background requests so the browser doesn't kill the thread early
+          networkTasks.push(
+              fetch(this.getActiveArchiveUrl(), {
+                  method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                  body: JSON.stringify({ action: "ARCHIVE_SESSION", payload: auditPayload })
+              })
+          );
+
+          // 5. Await network and tear down overlay
           await Promise.all(networkTasks);
+
+          let overlayEl = document.getElementById('unreserveOverlay');
+          if (overlayEl) document.body.removeChild(overlayEl);
 
           UIManager.showCustomAlert("Success", `Successfully un-reserved ${unreservedItems.length} item(s) and synced inventory!`);
       
+      } catch (err) {
+          let overlayEl = document.getElementById('unreserveOverlay');
+          if (overlayEl) document.body.removeChild(overlayEl);
+          UIManager.showCustomAlert("Error", "Failed to process un-reserve: " + err.message, true);
       } finally {
-          // This always runs at the very end to restore the button!
-          btn.textContent = origText; 
-          btn.disabled = false;
+          if (btn) {
+              btn.textContent = origText; 
+              btn.disabled = false;
+          }
       }
   }
 };

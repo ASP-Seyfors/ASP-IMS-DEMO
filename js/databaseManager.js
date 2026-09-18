@@ -356,11 +356,14 @@ const DatabaseManager = {
     let html = '';
     dbCopy.forEach((item, idx) => {
       let safeRef = String(item.ref || item.sku || '').replace(/"/g, '&quot;');
+      let avail = (parseInt(item.onHand, 10) || 0) - (parseInt(item.reservedQty, 10) || 0); // ✨ MATH
+      
       html += `
         <tr style="border-bottom: 1px solid #eee; background-color: ${idx % 2 === 0 ? '#fff' : '#f9f9f9'};">
           <td style="padding:10px; color:#555;">${item.mfr || '--'}</td>
           <td style="padding:10px; font-weight:bold; color:#00796b;">${item.ref || item.sku}</td>
           <td style="padding:10px; font-size:0.85rem; color:#333;">${item.desc || '--'}</td>
+          <td style="padding:10px; text-align:center; font-weight:bold; color:${avail > 0 ? '#2e7d32' : '#c62828'};">${avail}</td>
           <td style="padding:10px; text-align:center;">
             <button class="btn-small btn-auto" style="background-color: #00796b; color: #fff; margin:0; padding:6px 12px; display:flex; align-items:center; gap:6px;" onclick="DatabaseManager.openEditModal('${safeRef}')">
               <i data-lucide="pencil" style="width:14px; height:14px;"></i> Edit
@@ -379,83 +382,28 @@ const DatabaseManager = {
     if (!dbItem) return;
 
     let isAdmin = AuthManager.currentUser && AuthManager.currentUser.isAdmin;
-    
     let priceInputHtml = isAdmin 
       ? `<input type="text" id="modalPrice" value="${dbItem.price || '$0.00'}" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">` 
       : `<input type="text" id="modalPrice" value="${dbItem.price || '$0.00'}" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; background-color:#f5f5f5; color:#777;" readonly title="Admin approval required to edit pricing.">`;
-
     let costInputHtml = isAdmin 
       ? `<input type="text" id="modalCost" value="${dbItem.cost || '$0.00'}" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">` 
       : `<input type="text" id="modalCost" value="***" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; background-color:#f5f5f5; color:#999;" readonly title="Restricted Admin Data">`;
 
-    let modal = document.createElement('div');
-    modal.id = 'itemEditModal';
-    modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:999999; display:flex; justify-content:center; align-items:center; padding:15px; box-sizing:border-box;';
+    document.getElementById('modalRef').value = dbItem.ref || dbItem.sku;
+    document.getElementById('modalMfr').value = dbItem.mfr || '';
+    document.getElementById('modalDesc').value = dbItem.desc || '';
+    document.getElementById('modalCat').value = dbItem.category || '';
+    document.getElementById('modalShelf').value = dbItem.shelf || '';
     
-    modal.innerHTML = `
-      <div style="background:#fff; border-radius:8px; width:100%; max-width:500px; padding:20px; box-shadow:0 4px 20px rgba(0,0,0,0.5);">
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #00796b; padding-bottom:8px; margin-bottom:15px;">
-          <h3 style="margin:0; color:#00796b;">✏️ Edit Item Details</h3>
-          <button onclick="document.getElementById('itemEditModal').remove()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">&times;</button>
-        </div>
-        
-        <div style="margin-bottom:10px;">
-          <label style="font-weight:bold; font-size:0.85rem; color:#555;">REF / SKU (Read-Only)</label>
-          <input type="text" id="modalRef" value="${dbItem.ref || dbItem.sku}" readonly style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; background:#f0f0f0; font-weight:bold; color:#00796b;">
-        </div>
+    let statusEl = document.getElementById('modalStatus');
+    statusEl.value = dbItem.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE';
+    statusEl.style.color = dbItem.status === 'ACTIVE' ? '#2e7d32' : '#c62828';
 
-        <div style="margin-bottom:10px;">
-          <label style="font-weight:bold; font-size:0.85rem; color:#555;">Manufacturer</label>
-          <input type="text" id="modalMfr" value="${dbItem.mfr || ''}" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
-        </div>
+    document.getElementById('modalPricingBlock').innerHTML = `
+      <div style="flex:1;"><label style="font-weight:bold; font-size:0.85rem; color:#555;">Selling Price</label>${priceInputHtml}</div>
+      <div style="flex:1;"><label style="font-weight:bold; font-size:0.85rem; color:#555;">Unit Cost</label>${costInputHtml}</div>`;
 
-        <div style="margin-bottom:10px;">
-          <label style="font-weight:bold; font-size:0.85rem; color:#555;">Description</label>
-          <textarea id="modalDesc" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; resize:vertical; min-height:60px;">${dbItem.desc || ''}</textarea>
-        </div>
-
-        <div style="display:flex; gap:10px; margin-bottom:10px;">
-          <div style="flex:1;">
-            <label style="font-weight:bold; font-size:0.85rem; color:#555;">Category</label>
-            <input type="text" id="modalCat" value="${dbItem.category || ''}" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
-          </div>
-          <div style="flex:1;">
-            <label style="font-weight:bold; font-size:0.85rem; color:#555;">Shelf Location</label>
-            <input type="text" id="modalShelf" value="${dbItem.shelf || ''}" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; text-transform:uppercase;" placeholder="e.g. A-14">
-          </div>
-        </div>
-        
-        <div style="display:flex; gap:10px; margin-bottom:10px;">
-          <div style="flex:1;">
-            <label style="font-weight:bold; font-size:0.85rem; color:#555;">Status</label>
-            <select id="modalStatus" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; font-weight:bold; color:${dbItem.status === 'ACTIVE' ? '#2e7d32' : '#c62828'};">
-              <option value="ACTIVE" ${dbItem.status === 'ACTIVE' ? 'selected' : ''}>ACTIVE</option>
-              <option value="INACTIVE" ${dbItem.status !== 'ACTIVE' ? 'selected' : ''}>INACTIVE</option>
-            </select>
-          </div>
-        </div>
-
-        <div style="display:flex; gap:10px; margin-bottom:20px; padding:10px; background:#f9f9f9; border:1px solid #eee; border-radius:4px;">
-          <div style="flex:1;">
-            <label style="font-weight:bold; font-size:0.85rem; color:#555;">Selling Price</label>
-            ${priceInputHtml}
-          </div>
-          <div style="flex:1;">
-            <label style="font-weight:bold; font-size:0.85rem; color:#555;">Unit Cost</label>
-            ${costInputHtml}
-          </div>
-        </div>
-
-        <div style="display:flex; justify-content:space-between; gap:10px;">
-          <button onclick="document.getElementById('itemEditModal').remove()" style="flex:1; background:#757575; color:#fff; border:none; padding:10px; border-radius:4px; cursor:pointer;">Cancel</button>
-          <button onclick="DatabaseManager.saveModalEdits()" style="flex:1; background:#00796b; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; display:flex; justify-content:center; align-items:center; gap:6px;">
-            <i data-lucide="save" style="width:16px; height:16px;"></i> Apply Changes
-          </button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    if (typeof lucide !== 'undefined') lucide.createIcons();
+    document.getElementById('itemEditModal').style.display = 'flex';
   },
 
   saveModalEdits() {
@@ -473,20 +421,16 @@ const DatabaseManager = {
 
     let dbItem = this.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref.toUpperCase());
     if (dbItem) {
-      let oldPrice = dbItem.price; // ✨ Capture old price for the email alert
-      
       let changed = (dbItem.mfr !== mfr || dbItem.desc !== desc || dbItem.category !== cat || dbItem.status !== status || (isAdmin && dbItem.price !== price) || (isAdmin && cost !== null && dbItem.cost !== cost));
       
       if (changed || dbItem.shelf !== shelf) {
-        
-        // ✨ NEW: Compile an exact list of what changed for the Audit Log
         let changeNotes = [];
         if (dbItem.mfr !== mfr) changeNotes.push(`Mfr: ${dbItem.mfr} -> ${mfr}`);
         if (dbItem.desc !== desc) changeNotes.push(`Desc Updated`);
         if (dbItem.category !== cat) changeNotes.push(`Cat: ${dbItem.category} -> ${cat}`);
         if (dbItem.shelf !== shelf) changeNotes.push(`Shelf: ${dbItem.shelf} -> ${shelf}`);
         if (dbItem.status !== status) changeNotes.push(`Status: ${dbItem.status} -> ${status}`);
-        if (isAdmin && oldPrice !== price) changeNotes.push(`Price: ${oldPrice} -> ${price}`);
+        if (isAdmin && dbItem.price !== price) changeNotes.push(`Price: ${dbItem.price} -> ${price}`);
         if (isAdmin && cost !== null && dbItem.cost !== cost) changeNotes.push(`Cost Updated`);
 
         dbItem.mfr = mfr;
@@ -500,121 +444,40 @@ const DatabaseManager = {
         }
 
         let pendingUpd = JSON.parse(localStorage.getItem('asp_pending_updates')) || [];
-        let existingUpd = pendingUpd.find(u => u.ref === ref);
-        if (!existingUpd) {
+        if (!pendingUpd.find(u => u.ref === ref)) {
           pendingUpd.push({ ref: ref, timestamp: Date.now() });
           localStorage.setItem('asp_pending_updates', JSON.stringify(pendingUpd));
         }
 
         localStorage.setItem('asp_wh_db', JSON.stringify(this.db));
         
-        // ✨ NEW: Push item edits to Shopify AND handle Bundle logic
-        let shopifyUpdatePayload = [];
-        let isBundle = (dbItem.parentRef && parseInt(dbItem.uomMult, 10) > 1);
-        let parentItem = isBundle ? this.db.find(i => (i.sku || i.ref || '').toUpperCase() === dbItem.parentRef.toUpperCase()) : dbItem;
-        let pTotal = parentItem ? (parseInt(parentItem.onHand, 10) || 0) : 0;
-        let pRes = parentItem ? (parseInt(parentItem.reservedQty, 10) || 0) : 0;
-        let pHandle = String(parentItem ? (parentItem.sku || parentItem.ref) : (dbItem.sku || dbItem.ref)).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
-        let pTitle = String(parentItem ? (parentItem.sku || parentItem.ref) : (dbItem.sku || dbItem.ref));
+        // ✨ NEW: Call the centralized Shopify Payload Builder
+        let shopifyUpdatePayload = this.buildShopifyPayload([ref]);
 
-        if (isBundle) {
-            let cleanPrice = parseFloat(String(dbItem.price || '').replace(/[^0-9.-]+/g, '')) || 0;
-            shopifyUpdatePayload.push({
-                ref: String(dbItem.ref || dbItem.sku),
-                handle: pHandle, title: pTitle, desc: String(dbItem.desc || ''), mfr: String(dbItem.mfr || 'Unknown'),
-                category: String(dbItem.shopifyCategory || dbItem.category || 'Business & Industrial > Medical > Medical Supplies'),
-                availableQty: String(Math.floor((pTotal - pRes) / parseInt(dbItem.uomMult, 10))),
-                price: cleanPrice.toFixed(2), status: cleanPrice > 0 ? "active" : "draft",
-                isBundle: true, uomMult: dbItem.uomMult
-            });
-        } else {
-            let cleanPrice = parseFloat(String(dbItem.price || '').replace(/[^0-9.-]+/g, '')) || 0;
-            shopifyUpdatePayload.push({
-                ref: String(dbItem.ref || dbItem.sku),
-                handle: pHandle, title: pTitle, desc: String(dbItem.desc || ''), mfr: String(dbItem.mfr || 'Unknown'),
-                category: String(dbItem.shopifyCategory || dbItem.category || 'Business & Industrial > Medical > Medical Supplies'),
-                availableQty: String(pTotal - pRes), price: cleanPrice.toFixed(2), status: cleanPrice > 0 ? "active" : "draft",
-                isBundle: false, uomMult: 1
-            });
-            
-            let childBundles = this.db.filter(i => String(i.parentRef || '').toUpperCase() === String(dbItem.ref || dbItem.sku || '').toUpperCase() && parseInt(i.uomMult, 10) > 1);
-            childBundles.forEach(bundle => {
-                let bCleanPrice = parseFloat(String(bundle.price || '').replace(/[^0-9.-]+/g, '')) || 0;
-                shopifyUpdatePayload.push({
-                    ref: String(bundle.sku || bundle.ref),
-                    handle: pHandle, title: pTitle, desc: String(bundle.desc || dbItem.desc || ''), mfr: String(bundle.mfr || dbItem.mfr || 'Unknown'),
-                    category: String(bundle.shopifyCategory || bundle.category || dbItem.shopifyCategory || dbItem.category || 'Business & Industrial > Medical > Medical Supplies'),
-                    availableQty: String(Math.floor((pTotal - pRes) / parseInt(bundle.uomMult, 10))),
-                    price: bCleanPrice.toFixed(2), status: bCleanPrice > 0 ? "active" : "draft",
-                    isBundle: true, uomMult: bundle.uomMult
-                });
-            });
+        if (shopifyUpdatePayload.length > 0) {
+            fetch(SessionManager.getActiveArchiveUrl(), {
+                method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: "SYNC_SHOPIFY_SANDBOX", payload: shopifyUpdatePayload })
+            }).catch(e => console.warn("Shopify Database Editor update failed."));
         }
 
-        fetch(SessionManager.getActiveArchiveUrl(), {
-            method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: "SYNC_SHOPIFY_SANDBOX", payload: shopifyUpdatePayload })
-        }).catch(e => console.warn("Shopify Database Editor update failed."));
-
-        // ✨ NEW: Generate Ghost Session for the Audit Log
         if (changeNotes.length > 0) {
             let editPayload = {
-              id: Date.now().toString(),
-              status: "Completed",
-              userName: AuthManager.currentUser ? AuthManager.currentUser.name : "System Admin",
-              sessionName: "Database Editor Update",
-              orderNum: "",
-              workflowType: "Admin Adjustment",
-              dateStr: new Date().toLocaleDateString().replace(/\//g, '.'),
-              startStr: new Date().toLocaleTimeString(),
-              manifestEnabled: false,
-              expectedManifest: [],
+              id: Date.now().toString(), status: "Completed", userName: AuthManager.currentUser ? AuthManager.currentUser.name : "System Admin",
+              sessionName: "Database Editor Update", orderNum: "", workflowType: "Admin Adjustment",
+              dateStr: new Date().toLocaleDateString().replace(/\//g, '.'), startStr: new Date().toLocaleTimeString(),
+              manifestEnabled: false, expectedManifest: [],
               scannedObjects: [{
-                 actionTag: "DB Edit",
-                 gtin: dbItem.gtin || "N/A",
-                 ref: ref,
-                 lot: "N/A",
-                 exp: "N/A",
-                 mfr: mfr,
-                 desc: "Database Update",
-                 price: price,
-                 qty: 0, // 0 Qty ensures it doesn't affect inventory math
-                 rawScanLines: [],
-                 isNew: false,
-                 customerTag: "",
-                 orderNum: "",
-                 sessionId: Date.now().toString(),
-                 itemNote: changeNotes.join(" | ")
+                 actionTag: "DB Edit", gtin: dbItem.gtin || "N/A", ref: ref, lot: "N/A", exp: "N/A", mfr: mfr, desc: "Database Update",
+                 price: price, qty: 0, rawScanLines: [], isNew: false, customerTag: "", orderNum: "", sessionId: Date.now().toString(), itemNote: changeNotes.join(" | ")
               }],
-              pendingNewItems: [],
-              pendingUpdates: [],
-              lastUpdated: Date.now()
+              pendingNewItems: [], pendingUpdates: [], lastUpdated: Date.now()
             };
 
             let archive = JSON.parse(localStorage.getItem('asp_session_archive')) || [];
             archive.unshift(editPayload);
             localStorage.setItem('asp_session_archive', JSON.stringify(archive));
-            
-            if (typeof SessionManager !== 'undefined') {
-                SessionManager.pushToCloudArchive(editPayload); // Pushes straight to Google
-            }
-        }
-
-        // ✨ NEW: Fire Email Alert if Price Changed
-        if (isAdmin && oldPrice !== price) {
-            let alertPayload = {
-                action: "PRICE_ALERT",
-                payload: {
-                    user: AuthManager.currentUser ? AuthManager.currentUser.name : "Admin",
-                    ref: ref,
-                    oldPrice: oldPrice,
-                    newPrice: price
-                }
-            };
-            fetch(SessionManager.cloudArchiveUrl, {
-                method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify(alertPayload)
-            }).catch(e => console.warn("Price alert email failed to send."));
+            if (typeof SessionManager !== 'undefined') SessionManager.pushToCloudArchive(editPayload);
         }
 
         UIManager.showCustomAlert("Item Updated", `✅ ${ref} has been updated locally.\n\nClick "Upload Pending Data" later to push these changes to the cloud.`);
@@ -762,7 +625,7 @@ const DatabaseManager = {
             onDotMed: row[11], dotMedPrice: row[12], 
             syncedShopify: row[13], category: row[14], status: row[15], 
             parentRef: row[16], uomMult: row[17], shelf: row[18],
-            shopifyCategory: row[19] || "Business & Industrial > Medical > Medical Supplies"
+            shopifyCategory: row[19] || "Medical Supplies"
           }));
           
           fullDb.items = fullDb.items.concat(mappedItems);
@@ -896,6 +759,89 @@ const DatabaseManager = {
         `You have <b>${newItemsCount}</b> new items and <b>${updatesCount}</b> field edits pending.\n\nDo you want to push these changes to the master Google Sheet now?`, 
         confirmUpload
     );
+  },
+
+  // ✨ CENTRALIZED SHOPIFY PAYLOAD BUILDER (WITH GID SANITIZER & TYPE/TAGS)
+  buildShopifyPayload(itemRefsArray) {
+    let payload = [];
+    let processedHandles = new Set(); // Prevents duplicating the same parent family
+
+    itemRefsArray.forEach(ref => {
+        let dbItem = this.db.find(i => String(i.sku || i.ref || '').toUpperCase() === String(ref).toUpperCase());
+        if (!dbItem) return;
+
+        // Always identify the Parent to ensure the whole bundle family syncs together
+        let isBundle = (dbItem.parentRef && parseInt(dbItem.uomMult, 10) > 1);
+        let parentRef = isBundle ? dbItem.parentRef : (dbItem.sku || dbItem.ref);
+        let parentItem = this.db.find(i => String(i.sku || i.ref || '').toUpperCase() === String(parentRef).toUpperCase()) || dbItem;
+
+        let pHandle = String(parentRef).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+        
+        if (processedHandles.has(pHandle)) return; 
+        processedHandles.add(pHandle);
+
+        let pTotal = parseInt(parentItem.onHand || 0, 10);
+        let pRes = parseInt(parentItem.reservedQty || 0, 10);
+        let pCleanPrice = parseFloat(String(parentItem.price || '').replace(/[^0-9.-]+/g, '')) || 0;
+
+        // ✨ SANITIZER: Ensure shopifyCategory is always a valid GID, not plain text
+        let rawShopCat = String(parentItem.shopifyCategory || '').trim();
+        let shopCategoryGid = rawShopCat.startsWith('gid://') ? rawShopCat : "gid://shopify/TaxonomyCategory/bi-19-7";
+
+        // 1. Push the Parent Item
+        payload.push({
+            ref: String(parentItem.sku || parentItem.ref),
+            handle: pHandle,
+            title: String(parentRef),
+            desc: String(parentItem.desc || ''),
+            mfr: String(parentItem.mfr || 'Unknown'),
+            
+            // ✨ EXPLICIT MAPPINGS: Product Type and Tags mapped to DB Category
+            product_type: String(parentItem.category || 'Surgical Supply'),
+            tags: String(parentItem.category || 'Surgical Supply'),
+            category: String(parentItem.category || 'Surgical Supply'), 
+            
+            shopifyCategory: shopCategoryGid, 
+            gtin: String(parentItem.gtin || ''),
+            availableQty: String(Math.max(0, pTotal - pRes)),
+            price: pCleanPrice.toFixed(2),
+            status: String(parentItem.status || "ACTIVE").toUpperCase() === "INACTIVE" ? "draft" : "active",
+            isBundle: false,
+            uomMult: 1
+        });
+
+        // 2. Push all associated Child Bundles
+        let childBundles = this.db.filter(i => String(i.parentRef || '').toUpperCase() === String(parentRef).toUpperCase() && parseInt(i.uomMult, 10) > 1);
+        childBundles.forEach(bundle => {
+            let bCleanPrice = parseFloat(String(bundle.price || '').replace(/[^0-9.-]+/g, '')) || 0;
+            
+            let rawBundleCat = String(bundle.shopifyCategory || parentItem.shopifyCategory || '').trim();
+            let bundleCategoryGid = rawBundleCat.startsWith('gid://') ? rawBundleCat : "gid://shopify/TaxonomyCategory/bi-19-7";
+
+            payload.push({
+                ref: String(bundle.sku || bundle.ref),
+                handle: pHandle,
+                title: String(parentRef),
+                desc: String(bundle.desc || parentItem.desc || ''),
+                mfr: String(parentItem.mfr || 'Unknown'),
+                
+                // ✨ EXPLICIT MAPPINGS FOR BUNDLES
+                product_type: String(bundle.category || parentItem.category || 'Surgical Supply'),
+                tags: String(bundle.category || parentItem.category || 'Surgical Supply'),
+                category: String(bundle.category || parentItem.category || 'Surgical Supply'),
+                
+                shopifyCategory: bundleCategoryGid,
+                gtin: String(bundle.gtin || ''),
+                availableQty: String(Math.max(0, Math.floor((pTotal - pRes) / parseInt(bundle.uomMult, 10)))),
+                price: bCleanPrice.toFixed(2),
+                status: String(bundle.status || parentItem.status || "ACTIVE").toUpperCase() === "INACTIVE" ? "draft" : "active",
+                isBundle: true,
+                uomMult: bundle.uomMult
+            });
+        });
+    });
+
+    return payload;
   },
 
   importCloudDatabase(cloudDb) {

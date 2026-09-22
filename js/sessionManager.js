@@ -709,10 +709,26 @@ const SessionManager = {
         let isPreloaded = false; // ✨ NEW: Tracking flag
 
         if (preloadedAllocations.length > 0) {
-            this.expectedManifest = preloadedAllocations;
+            if (this.expectedManifest && this.expectedManifest.length > 0) {
+                // Merge the Allocations INTO the QBO Manifest
+                preloadedAllocations.forEach(pa => {
+                    let existing = this.expectedManifest.find(e => e.ref === pa.ref);
+                    if (existing) {
+                        existing.isReserved = true;
+                        existing.customerTag = pa.customerTag;
+                        existing.reservedQty = pa.reservedQty;
+                        existing.allocations = pa.allocations;
+                        if (pa.expectedQty > existing.expectedQty) existing.expectedQty = pa.expectedQty;
+                    } else {
+                        this.expectedManifest.push(pa);
+                    }
+                });
+            } else {
+                this.expectedManifest = preloadedAllocations;
+            }
             isPreloaded = true;
         } else if (this.expectedManifest && this.expectedManifest.length > 0) {
-            isPreloaded = true; // Set to true if it came from the QBO Staged Order feed
+            isPreloaded = true; 
         }
 
         if (this.expectedManifest && this.expectedManifest.length > 0) {
@@ -1685,7 +1701,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
       if (typeof UIManager !== 'undefined' && UIManager.toggleSessionNote) UIManager.toggleSessionNote();
 
       const chkPreload = document.getElementById('chkPreloadManifest');
-      if (chkPreload) chkPreload.checked = false;
+      if (chkPreload) { chkPreload.checked = false; chkPreload.dispatchEvent(new Event('change')); }
 
       document.getElementById('screenScanning').style.display = 'none';
       document.getElementById('screenReview').style.display = 'none';
@@ -1859,7 +1875,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
         if (typeof UIManager !== 'undefined' && UIManager.toggleSessionNote) UIManager.toggleSessionNote();
 
         const chkPreload = document.getElementById('chkPreloadManifest');
-        if (chkPreload) chkPreload.checked = false;
+        if (chkPreload) { chkPreload.checked = false; chkPreload.dispatchEvent(new Event('change')); }
         
         this.isSessionActive = false; this.isManifestEnabled = false;
         localStorage.setItem('asp_session_is_active', 'false'); localStorage.setItem('asp_manifest_enabled', 'false');
@@ -1974,8 +1990,9 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
     document.getElementById('sessionNoteInput').value = ""; 
     document.getElementById('chkSessionNote').checked = false;
     if (typeof UIManager !== 'undefined' && UIManager.toggleSessionNote) UIManager.toggleSessionNote();
+    
     const chkPreload = document.getElementById('chkPreloadManifest');
-    if (chkPreload) chkPreload.checked = false;
+    if (chkPreload) { chkPreload.checked = false; chkPreload.dispatchEvent(new Event('change')); }
 
     document.getElementById('screenSummary').style.display = 'none';
     document.getElementById('screenSetup').style.display = 'block';
@@ -2512,24 +2529,24 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
   async pushQboWriteBack(sessionObj) {
     if (!this.getActiveFeederUrl() || this.getActiveFeederUrl().includes("YOUR_")) return; 
     
-    if (!sessionObj.workflowType.includes('Packing') || !sessionObj.orderNum) return;
+    // Removed the "Packing" restriction so it works for Incoming Shipments too
+    if (!sessionObj.orderNum) return;
     
-    let payload = {
-      action: "QBO_WRITEBACK",
-      payload: sessionObj
-    };
-
+    // 1. Update internal QBO_Feed (Archive URL)
     try {
-      // ✨ THE FIX: Target the Archive URL (Database Script) where QBO_Engine actually lives!
       await fetch(this.getActiveArchiveUrl(), { 
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
+        method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: "QBO_WRITEBACK", payload: sessionObj })
       });
-    } catch (err) {
-      console.warn("Background QBO Write-back failed:", err);
-    }
+    } catch (err) {}
+
+    // 2. Update external DEMO ORDERS Feed (Feeder URL)
+    try {
+      await fetch(this.getActiveFeederUrl(), { 
+        method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: "COMPLETE_SESSION", sessionName: sessionObj.sessionName, orderNum: sessionObj.orderNum })
+      });
+    } catch (err) {}
   },
 
   bindOrderInputListener() {

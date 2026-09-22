@@ -1,7 +1,7 @@
 {
-  "name": "ASP IMS (DEMO) v5.1.6",
+  "name": "ASP IMS (DEMO) v5.5.3",
   "short_name": "ASP DEMO",
-  "description": "Allied Surgical Products Demonstration Sandbox",
+  "description": "Allied Surgical Products Development Sandbox",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#00b248",

@@ -17,7 +17,7 @@
  * Copyright (c) 2026 Thomas Seyfors / Allied Surgical Products.
  * All Rights Reserved.
  * ======================================================================= */
-const CACHE_NAME = 'asp-ims-demo-v5.1.6';
+const CACHE_NAME = 'asp-ims-demo-v5.5.3';
 
 
 const ASSETS_TO_CACHE = [
@@ -45,6 +45,7 @@ const ASSETS_TO_CACHE = [
   './js/scannerManager.js',
   './js/sessionManager.js',
   './js/uiManager.js',
+  './js/shippingManager.js',
   
   // HTML Screens
   './screens/login.html',
@@ -72,6 +73,7 @@ const ASSETS_TO_CACHE = [
   './modals/internalReportOptionsModal.html',
   './modals/stockReportEditorModal.html',
   './modals/systemRestoreModal.html',
+  './modals/shipmentManagerModal.html', // ✨ NEW
   
   // External CDNs
   'https://unpkg.com/html5-qrcode',

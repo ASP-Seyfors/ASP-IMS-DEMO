@@ -440,17 +440,23 @@ const SessionManager = {
     if (btn && !silent) { btn.textContent = "⏳ Fetching QBO..."; btn.disabled = true; btn.style.opacity = "0.7"; }
 
     try {
-      // ✨ THE FIX: Target the Archive URL (Database Script) where QBO_Engine actually lives!
-      await fetch(this.getActiveArchiveUrl(), {
+      // ✨ THE FIX: Removed 'no-cors' so the app actually waits for QBO to finish!
+      let res = await fetch(this.getActiveArchiveUrl(), {
         method: 'POST',
-        mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
         body: JSON.stringify({ action: "FETCH_QBO" })
       });
+      
+      let data = await res.json();
+      if (data.status === "error") throw new Error(data.message);
 
+      // Now that we know QBO is done, update the frontend dropdown
       await this.fetchStagedSessions(true);
 
-      if (!silent) alert("✅ QuickBooks Sync Complete! Check the Shipments & Orders Feed dropdown above.");
+      if (!silent) {
+          if (data.count === 0) alert("✅ Sync Complete! No pending open invoices currently staged.");
+          else alert(`✅ QuickBooks Sync Complete! You have ${data.count} open invoice(s) pending fulfillment.`);
+      }
     } catch (err) {
       if (!silent) alert("Error triggering QBO Sync: " + err.message);
     } finally {
@@ -510,6 +516,11 @@ const SessionManager = {
         sel.innerHTML = '';
         sel.add(first);
         opts.forEach(o => sel.add(o));
+        
+        // ✨ iOS SAFARI FIX: Invisible bumpers prevent the bottom option from clipping
+        let spacer1 = document.createElement('option'); spacer1.disabled = true; spacer1.text = " ";
+        let spacer2 = document.createElement('option'); spacer2.disabled = true; spacer2.text = " ";
+        sel.add(spacer1); sel.add(spacer2);
       }
     });
 
@@ -1354,7 +1365,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
                desc: "Navigate to vendor website for item description.", 
                category: "General", 
                shopifyCategory: "Medical Supplies", 
-               status: "INACTIVE",
+               status: "ACTIVE",
                parentRef: pRef, uomMult: uMult, shelf: ""
            });
        }
@@ -1375,7 +1386,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
                        desc: "Navigate to vendor website for item description.", 
                        category: "General", 
                        shopifyCategory: "Medical Supplies", 
-                       status: "INACTIVE",
+                       status: "ACTIVE",
                        parentRef: "", uomMult: 1, shelf: ""
                    });
                }
@@ -1685,7 +1696,16 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
     });
   },
 
-  completeSession(skipConfirm = false) {
+  completeSession(skipConfirm = false, skipShipping = false) {
+    
+    // ✨ THE INTERCEPT: Trigger Shipment Manager for Pick & Pack
+    if (this.currentWorkflowType === 'Picking & Packing' && !skipShipping) {
+      if (typeof ShippingManager !== 'undefined') {
+        ShippingManager.openModal();
+        return; // Halt normal completion until shipping is resolved
+      }
+    }
+
     const executeCompletion = async () => {
       
       let overlay = document.createElement('div');
@@ -2549,14 +2569,13 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
     }
   },
 
-  // ✨ NEW: Un-Reserve Logic Engine
+  // Un-Reserve Logic Engine (With Partial Quantity Support)
   openUnreserveModal(custName) {
       if (!custName) return;
       
       let binModal = document.getElementById('binViewerModal');
-      if (binModal) binModal.style.display = 'none'; // ✨ FIX: Hide it instead of destroying the HTML!
+      if (binModal) binModal.style.display = 'none';
 
-      // 🚨 THE FIX: Use the exact uppercase key, bypassing the alias resolver
       let targetKey = custName.toUpperCase();
       let allocations = JSON.parse(localStorage.getItem('asp_allocations')) || {};
       let custAllocs = allocations[targetKey];
@@ -2577,7 +2596,21 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
           if (itemData && itemData.details && itemData.details.length > 0) {
               itemData.details.forEach((det) => {
                   if (det.qty > 0) {
-                      html += `<label style="display:block; padding:8px; border-bottom:1px solid #eee; cursor:pointer;"><input type="checkbox" class="unreserve-chk" data-ref="${ref}" data-lot="${det.lot || ''}" data-exp="${det.exp || ''}" data-qty="${det.qty}" data-session="${det.sessionId || ''}"> <strong>${ref}</strong> (Qty: ${det.qty})<br><span style="font-size:0.8rem; color: var(--text-main);">Lot: ${det.lot || 'N/A'} | Exp: ${det.exp || 'N/A'}</span><br><span style="font-size:0.8rem; color: var(--text-main);">${dbItem.desc}</span></label>`;
+                      html += `
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #eee;">
+                          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                            <input type="checkbox" class="unreserve-chk" data-ref="${ref}" data-lot="${det.lot || ''}" data-exp="${det.exp || ''}" data-session="${det.sessionId || ''}" data-max="${det.qty}"> 
+                            <div>
+                              <strong style="color:#0277bd;">${ref}</strong> (Max: ${det.qty})<br>
+                              <span style="font-size:0.8rem; color: var(--text-main);">Lot: ${det.lot || 'N/A'} | Exp: ${det.exp || 'N/A'}</span><br>
+                              <span style="font-size:0.8rem; color: var(--text-main);">${dbItem.desc}</span>
+                            </div>
+                          </label>
+                          <div style="display:flex; flex-direction:column; align-items:center;">
+                            <label style="font-size:0.7rem; font-weight:bold; color:#555;">Un-Reserve Qty</label>
+                            <input type="number" id="unresQty_${ref}_${det.sessionId}" value="${det.qty}" min="1" max="${det.qty}" style="width:70px; padding:6px; text-align:center; border:1px solid #ccc; border-radius:4px; font-weight:bold; color:#d32f2f;">
+                          </div>
+                        </div>`;
                   }
               });
           }
@@ -2601,7 +2634,6 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
               return;
           }
 
-          // 1. Render the dynamic processing overlay
           let overlay = document.createElement('div');
           overlay.id = 'unreserveOverlay';
           overlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:999999; display:flex; flex-direction:column; justify-content:center; align-items:center; color:#fff;';
@@ -2619,23 +2651,34 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
           let allocations = JSON.parse(localStorage.getItem('asp_allocations')) || {};
           let unreservedItems = [];
           
-          // 2. Adjust local memory
+          // Adjust local memory using specific quantities
           checkboxes.forEach(chk => {
               let ref = chk.getAttribute('data-ref');
               let lot = chk.getAttribute('data-lot');
               let exp = chk.getAttribute('data-exp');
-              let qty = parseInt(chk.getAttribute('data-qty'), 10) || 0;
               let sessionId = chk.getAttribute('data-session');
+              let maxQty = parseInt(chk.getAttribute('data-max'), 10) || 0;
+              
+              // Safely grab the desired quantity from the input box
+              let qtyInput = document.getElementById(`unresQty_${ref}_${sessionId}`);
+              let unresQty = qtyInput ? parseInt(qtyInput.value, 10) : maxQty;
+              
+              // Prevent them from un-reserving more than what actually exists
+              if (isNaN(unresQty) || unresQty <= 0) return;
+              if (unresQty > maxQty) unresQty = maxQty;
 
               if (allocations[custName] && allocations[custName][ref]) {
                   let itemData = allocations[custName][ref];
                   if (itemData.details) {
                       let detIndex = itemData.details.findIndex(d => d.lot === lot && d.exp === exp && d.sessionId === sessionId);
-                      if (detIndex > -1) itemData.details.splice(detIndex, 1);
-                      itemData.qty -= qty;
+                      if (detIndex > -1) {
+                          itemData.details[detIndex].qty -= unresQty;
+                          if (itemData.details[detIndex].qty <= 0) itemData.details.splice(detIndex, 1);
+                      }
+                      itemData.qty -= unresQty;
                       if (itemData.qty <= 0) delete allocations[custName][ref];
                   } else if (itemData.qty !== undefined) {
-                      itemData.qty -= qty;
+                      itemData.qty -= unresQty;
                       if (itemData.qty <= 0) delete allocations[custName][ref];
                   }
                   if (Object.keys(allocations[custName]).length === 0) delete allocations[custName];
@@ -2643,11 +2686,11 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
 
               let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref.toUpperCase());
               if (dbItem) {
-                  dbItem.reservedQty = Math.max(0, (dbItem.reservedQty || 0) - qty);
+                  dbItem.reservedQty = Math.max(0, (dbItem.reservedQty || 0) - unresQty);
               }
 
               unreservedItems.push({
-                  ref: ref, lot: lot || "N/A", exp: exp || "N/A", qty: qty,
+                  ref: ref, lot: lot || "N/A", exp: exp || "N/A", qty: unresQty,
                   actionTag: "Un-Reserved", customerTag: custName, isNew: false, sessionId: Date.now().toString(),
                   itemNote: "Un-Reserved from Bin"
               });
@@ -2672,7 +2715,6 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
               })
           );
 
-          // 3. Robust Shopify Taxonomy Sync using Centralized Builder
           let refsToSync = unreservedItems.map(scan => scan.ref);
           let shopifySyncPayload = DatabaseManager.buildShopifyPayload(refsToSync);
           
@@ -2683,7 +2725,6 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
               }).catch(e => console.warn("Shopify background sync failed")));
           }
 
-          // 4. Submit Ghost Session to Audit Log
           let uNameInput = document.getElementById('userNameInput');
           let userName = uNameInput && uNameInput.value ? uNameInput.value.trim() : "Operator";
 
@@ -2706,13 +2747,19 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
               })
           );
 
-          // 5. Await network and tear down overlay
           await Promise.all(networkTasks);
 
           let overlayEl = document.getElementById('unreserveOverlay');
           if (overlayEl) document.body.removeChild(overlayEl);
 
           UIManager.showCustomAlert("Success", `Successfully un-reserved ${unreservedItems.length} item(s) and synced inventory!`);
+          
+          // UI REFRESH FIX: Immediately reload the specific modal that was open
+          if (custName === "ASP DAMAGED INVENTORY") {
+              if (typeof UIManager !== 'undefined' && UIManager.openDamagedBinViewerModal) UIManager.openDamagedBinViewerModal();
+          } else {
+              if (typeof UIManager !== 'undefined' && UIManager.openBinViewerModal) UIManager.openBinViewerModal();
+          }
       
       } catch (err) {
           let overlayEl = document.getElementById('unreserveOverlay');

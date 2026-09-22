@@ -34,6 +34,8 @@ const DatabaseManager = {
   suppliers: JSON.parse(localStorage.getItem('asp_wh_suppliers')) || defaultSuppliers,
   customers: JSON.parse(localStorage.getItem('asp_wh_customers')) || defaultCustomers,
 
+  shippingRules: JSON.parse(localStorage.getItem('asp_shipping_rules')) || {},
+
   // ✨ NEW: Alias Dictionaries and Resolver Engine
   customerAliases: JSON.parse(localStorage.getItem('asp_wh_cust_aliases')) || {},
   supplierAliases: JSON.parse(localStorage.getItem('asp_wh_sup_aliases')) || {},
@@ -625,7 +627,8 @@ const DatabaseManager = {
             onDotMed: row[11], dotMedPrice: row[12], 
             syncedShopify: row[13], category: row[14], status: row[15], 
             parentRef: row[16], uomMult: row[17], shelf: row[18],
-            shopifyCategory: row[19] || "Medical Supplies"
+            shopifyCategory: row[19] || "Medical Supplies",
+            weight: row[20], dimL: row[21], dimW: row[22], dimH: row[23] // ✨ NEW MAPPINGS
           }));
           
           fullDb.items = fullDb.items.concat(mappedItems);
@@ -635,9 +638,11 @@ const DatabaseManager = {
             fullDb.suppliers = data.db.suppliers || [];
             fullDb.vendors = data.db.vendors || [];
             
-            // ✨ ADD THESE TWO LINES TO CATCH THE DICTIONARY FROM APPS SCRIPT
             fullDb.customerAliases = data.db.customerAliases || {}; 
             fullDb.supplierAliases = data.db.supplierAliases || {}; 
+            
+            // ✨ Catch the shipping rules so importCloudDatabase can save them
+            fullDb.shippingRules = data.db.shippingRules || {};
           }
           totalPages = data.totalPages || 1;
           page++;
@@ -805,9 +810,10 @@ const DatabaseManager = {
             gtin: String(parentItem.gtin || ''),
             availableQty: String(Math.max(0, pTotal - pRes)),
             price: pCleanPrice.toFixed(2),
-            status: String(parentItem.status || "ACTIVE").toUpperCase() === "INACTIVE" ? "draft" : "active",
+            status: pCleanPrice > 0 ? "active" : "draft",
             isBundle: false,
-            uomMult: 1
+            uomMult: 1,
+            weight: parseFloat(parentItem.weight) || 0.5 // ✨ NEW: Default to 0.5 if blank
         });
 
         // 2. Push all associated Child Bundles
@@ -834,9 +840,10 @@ const DatabaseManager = {
                 gtin: String(bundle.gtin || ''),
                 availableQty: String(Math.max(0, Math.floor((pTotal - pRes) / parseInt(bundle.uomMult, 10)))),
                 price: bCleanPrice.toFixed(2),
-                status: String(bundle.status || parentItem.status || "ACTIVE").toUpperCase() === "INACTIVE" ? "draft" : "active",
+                status: bCleanPrice > 0 ? "active" : "draft",
                 isBundle: true,
-                uomMult: bundle.uomMult
+                uomMult: bundle.uomMult,
+                weight: parseFloat(bundle.weight) || (parseFloat(parentItem.weight || 0.5) * parseInt(bundle.uomMult, 10)) // ✨ NEW: Auto-multiply by box size!
             });
         });
     });
@@ -853,6 +860,12 @@ const DatabaseManager = {
     if (cloudDb.supplierAliases) {
       this.supplierAliases = cloudDb.supplierAliases;
       localStorage.setItem('asp_wh_sup_aliases', JSON.stringify(this.supplierAliases));
+    }
+    
+    // ✨ NEW: Store Customer Shipping Rules
+    if (cloudDb.shippingRules) {
+      this.shippingRules = cloudDb.shippingRules;
+      localStorage.setItem('asp_shipping_rules', JSON.stringify(this.shippingRules));
     }
 
     if (cloudDb.items && cloudDb.items.length > 0) {

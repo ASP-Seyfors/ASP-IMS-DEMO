@@ -374,7 +374,10 @@ const SessionManager = {
 
     // 1. Fetch Manual Orders from the Feeder URL (Safely)
     try {
-      let manualRes = await fetch(this.getActiveFeederUrl());
+      // ✨ ADDED: Cache-buster (?t=...) prevents Google from returning stale data
+      let feederUrl = this.getActiveFeederUrl();
+      let joiner = feederUrl.includes('?') ? '&' : '?';
+      let manualRes = await fetch(`${feederUrl}${joiner}t=${Date.now()}`);
       let manualText = await manualRes.text();
       if (manualText.trim().startsWith('{')) {
           manualData = JSON.parse(manualText);
@@ -383,7 +386,8 @@ const SessionManager = {
 
     // 2. Fetch QBO Invoices from the Database URL (Safely)
     try {
-      let qboRes = await fetch(`${this.getActiveArchiveUrl()}?action=GET_QBO_FEED`);
+      // ✨ ADDED: Cache-buster (&t=...) guarantees we pull the newest QBO invoices
+      let qboRes = await fetch(`${this.getActiveArchiveUrl()}?action=GET_QBO_FEED&t=${Date.now()}`);
       let qboText = await qboRes.text();
       if (qboText.trim().startsWith('{')) {
           qboData = JSON.parse(qboText);

@@ -810,7 +810,7 @@ const DatabaseManager = {
             gtin: String(parentItem.gtin || ''),
             availableQty: String(Math.max(0, pTotal - pRes)),
             price: pCleanPrice.toFixed(2),
-            status: pCleanPrice > 0 ? "active" : "draft",
+            "status": (String(parentItem.status || "ACTIVE").toUpperCase() === "INACTIVE") ? "draft" : "active",
             isBundle: false,
             uomMult: 1,
             weight: parseFloat(parentItem.weight) || 0.5 // ✨ NEW: Default to 0.5 if blank
@@ -840,7 +840,7 @@ const DatabaseManager = {
                 gtin: String(bundle.gtin || ''),
                 availableQty: String(Math.max(0, Math.floor((pTotal - pRes) / parseInt(bundle.uomMult, 10)))),
                 price: bCleanPrice.toFixed(2),
-                status: bCleanPrice > 0 ? "active" : "draft",
+                "status": (String(bundle.status || parentItem.status || "ACTIVE").toUpperCase() === "INACTIVE") ? "draft" : "active",
                 isBundle: true,
                 uomMult: bundle.uomMult,
                 weight: parseFloat(bundle.weight) || (parseFloat(parentItem.weight || 0.5) * parseInt(bundle.uomMult, 10)) // ✨ NEW: Auto-multiply by box size!

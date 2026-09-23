@@ -153,6 +153,38 @@ window.forceAppUpdate = async function() {
     }
 };
 
+async function exportAppsScriptFiles(event) {
+    let btn = event ? event.target : document.activeElement;
+    let origHtml = btn.innerHTML;
+    
+    if (!confirm("Are you sure you want to backup all backend source code files to your Google Drive?\n\nThis will take a few moments.")) return;
+
+    btn.innerHTML = "⏳ Backing Up Code...";
+    btn.disabled = true;
+
+    try {
+        let res = await fetch(SessionManager.getActiveArchiveUrl(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: "EXPORT_APPS_SCRIPT" })
+        });
+        
+        let data = await res.json();
+        
+        if (data.status === "success") {
+            alert(`✅ Success! Backed up ${data.count} code files to your Google Drive.`);
+            window.open(data.url, '_blank'); // Opens the new Google Drive folder automatically
+        } else {
+            alert("Export Error: " + data.message);
+        }
+    } catch (err) {
+        alert("Network Error: " + err.message);
+    } finally {
+        btn.innerHTML = origHtml;
+        btn.disabled = false;
+    }
+}
+
 window.onload = async () => { 
   // 1. Fetch and inject all HTML components FIRST
   if (typeof ComponentManager !== 'undefined') {
@@ -349,6 +381,7 @@ window.executeShopifySandboxSync = () => AuditManager.executeShopifySandboxSync(
 window.generateRevMedPDF = (mode) => ReportsManager.generateRevMedPDF(mode);
 
 window.sendDeploymentBlast = sendDeploymentBlast;
+window.exportAppsScriptFiles = exportAppsScriptFiles; // <-- Add this line
 
 window.openActiveShipmentsHub = openActiveShipmentsHub;
 

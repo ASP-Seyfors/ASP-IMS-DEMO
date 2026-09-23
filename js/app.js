@@ -113,6 +113,62 @@ async function sendDeploymentBlast() {
     }
 }
 
+async function sendPreDeploymentBlast() {
+    let tDate = document.getElementById('preDeployDate').value;
+    let tTime = document.getElementById('preDeployTime').value;
+
+    if (!tDate || !tTime) {
+        alert("Please select a target Date and Time for the deployment.");
+        return;
+    }
+
+    // Format the date (YYYY-MM-DD to MM/DD/YYYY)
+    let [y, m, d] = tDate.split('-');
+    let formattedDate = `${m}/${d}/${y}`;
+
+    // Format the time (24hr to 12hr AM/PM)
+    let [hours, minutes] = tTime.split(':');
+    let ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    let formattedTime = `${hours}:${minutes} ${ampm}`;
+
+    let btn = document.getElementById('btnSendPreDeploy');
+    let origHtml = btn.innerHTML;
+    btn.innerHTML = "⏳ Sending Warning...";
+    btn.disabled = true;
+
+    let payload = {
+        action: "SEND_PRE_DEPLOY_EMAIL",
+        payload: {
+            targetDate: formattedDate,
+            targetTime: formattedTime
+        }
+    };
+
+    try {
+        let res = await fetch(SessionManager.getActiveArchiveUrl(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload)
+        });
+        
+        let data = await res.json();
+        
+        if (data.status === "success") {
+            alert("Success! Pre-deployment warning email has been sent to the team.");
+            document.getElementById('preDeployDate').value = "";
+            document.getElementById('preDeployTime').value = "";
+        } else {
+            alert("Error sending email: " + data.message);
+        }
+    } catch (err) {
+        alert("Network Error: " + err.message);
+    } finally {
+        btn.innerHTML = origHtml;
+        btn.disabled = false;
+    }
+}
+
 window.forceAppUpdate = async function() {
     // Circuit Breaker: Prevent infinite loops
     if (sessionStorage.getItem('isUpdating') === 'true') {
@@ -253,8 +309,7 @@ window.masterSystemSync = async (event) => {
     <div style="background:#fff; border-radius:8px; width:100%; max-width:400px; padding:20px; box-shadow:0 4px 20px rgba(0,0,0,0.5);">
       <h3 style="margin:0 0 15px 0; color:#0277bd; text-align:center;">🔄 Master System Sync</h3>
       <div id="syncStep1" style="margin-bottom:10px; font-weight:bold; color:#555;">⏳ 1. Uploading Local History...</div>
-      <div id="syncStep2" style="margin-bottom:10px; font-weight:bold; color:#555;">⏳ 2. Syncing Master Database...</div>
-      <div id="syncStep3" style="margin-bottom:15px; font-weight:bold; color:#555;">⏳ 3. Syncing Cloud Vault...</div>
+      <div id="syncStep2" style="margin-bottom:15px; font-weight:bold; color:#555;">⏳ 2. Syncing Master Database...</div>
       <div style="width:100%; background:#eee; border-radius:4px; height:8px; overflow:hidden;">
         <div id="syncProgressBar" style="width:0%; height:100%; background:#2e7d32; transition:width 0.3s ease;"></div>
       </div>
@@ -272,18 +327,13 @@ window.masterSystemSync = async (event) => {
     if (typeof SessionManager.pushLegacySessionsToCloud === 'function') {
       await SessionManager.pushLegacySessionsToCloud(null, true);
     }
-    updateStep(1, "Local History Uploaded", 33);
+    updateStep(1, "Local History Uploaded", 50);
 
     // Download fresh items from the cloud using the correct function name
     if (typeof DatabaseManager.downloadCloudDatabase === 'function') {
       await DatabaseManager.downloadCloudDatabase(null, true);
     }
-    updateStep(2, "Master Database Synced", 66);
-
-    if (typeof SessionManager.syncCloudArchive === 'function') {
-      await SessionManager.syncCloudArchive(null, true);
-    }
-    updateStep(3, "Cloud Vault Directory Synced", 100);
+    updateStep(2, "Master Database Synced", 100);
 
     setTimeout(() => {
       modal.style.display = 'none';
@@ -381,7 +431,8 @@ window.executeShopifySandboxSync = () => AuditManager.executeShopifySandboxSync(
 window.generateRevMedPDF = (mode) => ReportsManager.generateRevMedPDF(mode);
 
 window.sendDeploymentBlast = sendDeploymentBlast;
-window.exportAppsScriptFiles = exportAppsScriptFiles; // <-- Add this line
+window.sendPreDeploymentBlast = sendPreDeploymentBlast;
+window.exportAppsScriptFiles = exportAppsScriptFiles; 
 
 window.openActiveShipmentsHub = openActiveShipmentsHub;
 

@@ -62,8 +62,8 @@ const InventoryEngine = {
    * AVAILABILITY VALIDATION
    */
   validateAvailability(trueRef, requestedQty, action, currentDb, customerTag, currentAllocations, ignoreOverpack = false, workflowType = '') {
-    // If we are RECEIVING, we are bringing items into the building. Skip availability checks.
-    if (workflowType.toUpperCase().includes('RECEIVING')) {
+    // ✨ THE FIX: Whitelist STOCKTAKE alongside RECEIVING to allow new items to bypass strict shelf checks
+    if (workflowType.toUpperCase().includes('RECEIVING') || workflowType.toUpperCase().includes('STOCKTAKE')) {
         return true;
     }
 
@@ -223,6 +223,36 @@ const InventoryEngine = {
         if (tag && currentAllocations[tag] && currentAllocations[tag][ref]) {
             let deduct = item.qty;
             reservedChanges[ref] -= deduct; 
+            currentAllocations[tag][ref].qty -= deduct;
+            
+            let targetLot = (item.lot === 'N/A' || item.lot === 'NO_LOT') ? '' : item.lot;
+            let targetExp = (item.exp === 'N/A' || item.exp === 'NO_EXP') ? '' : item.exp;
+
+            let exactMatches = currentAllocations[tag][ref].details.filter(d => d.lot === targetLot && d.exp === targetExp && d.qty > 0);
+            for (let i = 0; i < exactMatches.length; i++) {
+                if (deduct <= 0) break;
+                let take = Math.min(exactMatches[i].qty, deduct);
+                exactMatches[i].qty -= take;
+                deduct -= take;
+            }
+
+            if (deduct > 0) {
+                currentAllocations[tag][ref].details.sort((a, b) => {
+                    if (!a.exp || a.exp === 'NO_EXP') return 1;
+                    if (!b.exp || b.exp === 'NO_EXP') return -1;
+                    return new Date(a.exp) - new Date(b.exp);
+                });
+
+                for (let i = 0; i < currentAllocations[tag][ref].details.length; i++) {
+                    if (deduct <= 0) break;
+                    let det = currentAllocations[tag][ref].details[i];
+                    if (det.qty > 0) {
+                        let take = Math.min(det.qty, deduct);
+                        det.qty -= take;
+                        deduct -= take;
+                    }
+                }
+            }
             currentAllocations[tag][ref].details = currentAllocations[tag][ref].details.filter(d => d.qty > 0);
         }
       }

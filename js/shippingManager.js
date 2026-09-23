@@ -274,6 +274,13 @@ const ShippingManager = {
             } else {
                 safeSet('shipAddress1', addr);
             }
+        } else {
+            // ✨ THE FIX: Explicitly clear the fields if the new customer has no saved address!
+            safeSet('shipAddress1', '');
+            safeSet('shipAddress2', '');
+            safeSet('shipAddressCity', '');
+            safeSet('shipAddressState', '');
+            safeSet('shipAddressZip', '');
         }
     },
 

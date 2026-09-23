@@ -1438,12 +1438,18 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
       finalOrderNum = iNote;
     }
 
-    let cTagCombined = finalCustomerTag + (finalOrderNum ? ` - ${finalOrderNum}` : '');
+   let cTagCombined = finalCustomerTag + (finalOrderNum ? ` - ${finalOrderNum}` : '');
     let bypassOverpackWarning = ignoreOverpack || !this.isManifestEnabled;
+
+    // ✨ THE FIX: Tally what has already been scanned this session to prevent over-reserving!
+    let alreadyScannedQty = this.scannedObjects
+        .filter(i => i.ref === ref && i.actionTag === effectiveTag)
+        .reduce((acc, curr) => acc + curr.qty, 0);
 
     try {
       let currentAllocations = JSON.parse(localStorage.getItem('asp_allocations')) || {};
-      InventoryEngine.validateAvailability(ref, qty, effectiveTag, DatabaseManager.db, cTagCombined, currentAllocations, bypassOverpackWarning, this.currentWorkflowType);
+      // Add the alreadyScannedQty to the requested qty for an accurate validation
+      InventoryEngine.validateAvailability(ref, qty + alreadyScannedQty, effectiveTag, DatabaseManager.db, cTagCombined, currentAllocations, bypassOverpackWarning, this.currentWorkflowType);
     } catch (error) {
       if (error.message.startsWith('OVERPACK_WARNING:')) {
         let friendlyMsg = `You just scanned an item that isn't on the original reserve list or exceeds the expected quantity for this customer.\n\nDo you want to pull this from general inventory and add it to their shipment anyway?`;
@@ -1837,7 +1843,14 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
         }
 
         // ✨ NEW: Call the centralized Shopify Payload Builder
-        let refsToSync = this.scannedObjects.map(scan => scan.ref);
+        // THE FIX: If it's a Full Stocktake, we must sync the ENTIRE DB so un-scanned items zero-out!
+        let refsToSync = [];
+        if (this.currentWorkflowType === 'Full Stocktake') {
+            refsToSync = DatabaseManager.db.map(i => i.sku || i.ref);
+        } else {
+            refsToSync = this.scannedObjects.map(scan => scan.ref);
+        }
+
         let shopifyUpdatePayload = DatabaseManager.buildShopifyPayload(refsToSync);
         
         if (shopifyUpdatePayload.length > 0 && archiveUrl) {

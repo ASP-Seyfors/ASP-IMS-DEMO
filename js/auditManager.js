@@ -828,8 +828,8 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
   generateInternalSalesReport(cust) {
     if (!cust) return;
     
-    // Read the limit selection from the modal radio buttons
-    let limitRadio = document.querySelector('input[name="internalReportScope"]:checked');
+    // Read the limit selection from the main reports screen
+    let limitRadio = document.querySelector('#screenReports input[name="internalReportScope"]:checked');
     let limit = limitRadio ? limitRadio.value : '10';
 
     let incDesc = document.getElementById('chkIntDesc') ? document.getElementById('chkIntDesc').checked : true;
@@ -1020,8 +1020,10 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
 
     // 2. Inject Data and Bind Buttons
     document.getElementById('reportItemRowsContainer').innerHTML = rowsHtml.length > 0 ? rowsHtml : '<div style="text-align:center; padding:10px; color:#777;">No items currently available in stock.</div>';
+    
+    // ✨ FIX: Pass the 'cust' variable into the bound functions
     document.getElementById('btnExportStockReportPdf').onclick = () => AuditManager.exportCustomerStockReportPDF(cust);
-    document.getElementById('btnExportStockReportEmail').onclick = () => AuditManager.draftEmailFlyer(cust);
+    document.getElementById('btnExportStockReportEmail').onclick = () => ReportsManager.draftEmailFlyer(cust);
 
     // 3. Show Modal
     document.getElementById('stockReportEditorModal').style.display = 'flex';

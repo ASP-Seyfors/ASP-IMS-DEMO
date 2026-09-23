@@ -165,6 +165,10 @@ const ShippingManager = {
         if (btn) { btn.innerHTML = "⏳ Contacting UPS API..."; btn.disabled = true; }
 
         try {
+            // ✨ ADD THESE TWO MISSING LINES TO DEFINE THE VARIABLES
+            let serviceType = document.getElementById('shipServiceType').value;
+            let isResidential = document.querySelector('input[name="shipAddressType"]:checked').value === 'residential';
+
             // Attempt backend UPS call (ready for tomorrow's testing)
             let payload = {
                 action: "CREATE_UPS_SHIPMENT",
@@ -180,8 +184,8 @@ const ShippingManager = {
                     city: document.getElementById('shipAddressCity').value.trim(),
                     state: document.getElementById('shipAddressState').value.trim(),
                     zip: document.getElementById('shipAddressZip').value.trim(),
-                    serviceType: serviceType,
-                    isResidential: isResidential
+                    serviceType: serviceType,     // Now this will work
+                    isResidential: isResidential  // Now this will work
                 }
             };
 

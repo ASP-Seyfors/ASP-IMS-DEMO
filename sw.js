@@ -46,6 +46,7 @@ const ASSETS_TO_CACHE = [
   './js/sessionManager.js',
   './js/uiManager.js',
   './js/shippingManager.js',
+  './js/traceability.js',
   
   // HTML Screens
   './screens/login.html',
@@ -73,7 +74,8 @@ const ASSETS_TO_CACHE = [
   './modals/internalReportOptionsModal.html',
   './modals/stockReportEditorModal.html',
   './modals/systemRestoreModal.html',
-  './modals/shipmentManagerModal.html', // ✨ NEW
+  './modals/shipmentManagerModal.html',
+  './modals/traceability.html',
   
   // External CDNs
   'https://unpkg.com/html5-qrcode',

@@ -2138,7 +2138,11 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
 
     // Create the new Reversal Payload for the Audit Log
     let revScannedObjects = targetSession.scannedObjects.map(item => {
-        return { ...item, qty: -(item.qty), itemNote: `REVERSAL of ${targetSession.id}` };
+        return { 
+           ...item, 
+           qty: -(item.qty), 
+           itemNote: item.itemNote ? `[REVERSAL] ${item.itemNote}` : `REVERSAL of ${targetSession.id}` 
+        };
     });
 
     let revSession = {

@@ -351,7 +351,7 @@ window.returnToEdit = () => SessionManager.returnToEdit();
 window.cancelScannedItem = () => SessionManager.cancelScannedItem();
 window.saveItemLog = () => SessionManager.saveItemLog();
 window.clearManifestList = () => SessionManager.clearManifestList();
-window.triggerQboSync = () => SessionManager.triggerQboSync();
+window.triggerQboSync = () => SessionManager.triggerQboSync(e);
 window.offloadAndPurgeHistory = (e) => SessionManager.offloadAndPurgeHistory(e);
 
 window.scanDocumentOCR = (e) => ScannerManager.scanDocumentOCR(e);

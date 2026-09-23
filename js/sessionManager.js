@@ -1418,7 +1418,9 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
     }
 
     let effectiveTag = this.currentItemAction;
-    if (!this.currentWorkflowType.includes('Receiving & Reserving')) {
+    
+    // ✨ THE FIX: Whitelist Stocktake so it retains your manual Inventory/Reserved toggle choice
+    if (!this.currentWorkflowType.includes('Receiving & Reserving') && !this.currentWorkflowType.includes('Stocktake')) {
       if (this.currentWorkflowType.includes('Reserving')) effectiveTag = 'Reserved';
       else if (this.currentWorkflowType.includes('Packing')) effectiveTag = 'Pack & Ship';
       else if (this.currentWorkflowType.includes('Un-Reserve')) effectiveTag = 'Un-Reserve';
@@ -1805,6 +1807,20 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
         }
         
         DatabaseManager.db = ledgerResult.updatedDb;
+        
+        // ✨ THE FIX: Define Shopify sync list early and flag them as TRUE in the database
+        let refsToSync = [];
+        if (this.currentWorkflowType === 'Full Stocktake') {
+            refsToSync = DatabaseManager.db.map(i => i.sku || i.ref);
+        } else {
+            refsToSync = this.scannedObjects.map(scan => scan.ref);
+        }
+        
+        refsToSync.forEach(ref => {
+            let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === (ref || '').toUpperCase());
+            if (dbItem) dbItem.syncedShopify = "TRUE";
+        });
+        
         localStorage.setItem('asp_wh_db', JSON.stringify(DatabaseManager.db));
 
         let dbPayload = null;
@@ -1840,15 +1856,6 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
         if (completedSessionObj) {
             networkTasks.push(this.pushToCloudArchive(completedSessionObj));
             networkTasks.push(this.pushQboWriteBack(completedSessionObj));
-        }
-
-        // ✨ NEW: Call the centralized Shopify Payload Builder
-        // THE FIX: If it's a Full Stocktake, we must sync the ENTIRE DB so un-scanned items zero-out!
-        let refsToSync = [];
-        if (this.currentWorkflowType === 'Full Stocktake') {
-            refsToSync = DatabaseManager.db.map(i => i.sku || i.ref);
-        } else {
-            refsToSync = this.scannedObjects.map(scan => scan.ref);
         }
 
         let shopifyUpdatePayload = DatabaseManager.buildShopifyPayload(refsToSync);

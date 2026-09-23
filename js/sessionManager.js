@@ -578,8 +578,10 @@ const SessionManager = {
 
     let destRow = document.getElementById('rowItemDestination');
     let tagRow = document.getElementById('rowCustomerTag');
-    if (destRow) destRow.style.display = 'none';
-    if (tagRow) tagRow.style.display = 'none';
+    
+    // ✨ FIX: Allow Destination toggle during Stocktake so users can tag Reserved bins
+    if (destRow) destRow.style.display = 'flex';
+    if (tagRow) tagRow.style.display = 'none'; // Only shows if they click 'Reserved'
     
     this.currentItemAction = 'Inventory';
     ScannerManager.resetScanLinesAndFields();
@@ -1953,6 +1955,8 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
         dbItem.onHand = 0;
         dbItem.reservedQty = 0; 
       });
+      // ✨ FIX: Completely wipe the live allocations ledger so it can be rebuilt from scratch
+      localStorage.setItem('asp_allocations', JSON.stringify({}));
     } else {
       Object.keys(scannedTotals).forEach(ref => {
         let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref);

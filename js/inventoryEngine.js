@@ -223,42 +223,28 @@ const InventoryEngine = {
         if (tag && currentAllocations[tag] && currentAllocations[tag][ref]) {
             let deduct = item.qty;
             reservedChanges[ref] -= deduct; 
-            currentAllocations[tag][ref].qty -= deduct;
-            
-            let targetLot = (item.lot === 'N/A' || item.lot === 'NO_LOT') ? '' : item.lot;
-            let targetExp = (item.exp === 'N/A' || item.exp === 'NO_EXP') ? '' : item.exp;
-
-            let exactMatches = currentAllocations[tag][ref].details.filter(d => d.lot === targetLot && d.exp === targetExp && d.qty > 0);
-            for (let i = 0; i < exactMatches.length; i++) {
-                if (deduct <= 0) break;
-                let take = Math.min(exactMatches[i].qty, deduct);
-                exactMatches[i].qty -= take;
-                deduct -= take;
-            }
-
-            if (deduct > 0) {
-                currentAllocations[tag][ref].details.sort((a, b) => {
-                    if (!a.exp || a.exp === 'NO_EXP') return 1;
-                    if (!b.exp || b.exp === 'NO_EXP') return -1;
-                    return new Date(a.exp) - new Date(b.exp);
-                });
-
-                for (let i = 0; i < currentAllocations[tag][ref].details.length; i++) {
-                    if (deduct <= 0) break;
-                    let det = currentAllocations[tag][ref].details[i];
-                    if (det.qty > 0) {
-                        let take = Math.min(det.qty, deduct);
-                        det.qty -= take;
-                        deduct -= take;
-                    }
-                }
-            }
             currentAllocations[tag][ref].details = currentAllocations[tag][ref].details.filter(d => d.qty > 0);
         }
       }
+      // ✨ FIX: Process "Reserved" items during a Stocktake to rebuild the Allocations Ledger
+      else if (wType.includes('STOCKTAKE')) {
+          // Note: onHand math is intentionally skipped here because commitStocktake() explicitly overwrote it earlier
+          if (actionTag === 'RESERVED' && tag) {
+             reservedChanges[ref] += item.qty;
+             currentAllocations[tag][ref].qty += item.qty;
+             
+             let cleanLot = (item.lot === 'N/A' || item.lot === 'NA' || item.lot === 'NO_LOT') ? '' : item.lot;
+             let cleanExp = (item.exp === 'N/A' || item.exp === 'NA' || item.exp === 'NO_EXP') ? '' : item.exp;
+             let cleanOrder = (orderNum === 'N/A' || orderNum === 'NA') ? '' : orderNum;
+
+             currentAllocations[tag][ref].details.push({
+                 lot: cleanLot, exp: cleanExp, orderNum: cleanOrder, sessionId: item.sessionId || '', qty: item.qty
+             });
+          }
+      }
     });
 
-    Object.keys(currentAllocations).forEach(t => { 
+    Object.keys(currentAllocations).forEach(t => {
       Object.keys(currentAllocations[t]).forEach(ref => {
           if (currentAllocations[t][ref].qty <= 0) delete currentAllocations[t][ref];
       });

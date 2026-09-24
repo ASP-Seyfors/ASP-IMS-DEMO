@@ -1800,7 +1800,14 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
           });
         }
 
-        let ledgerResult = InventoryEngine.commitLedgerMath(this.scannedObjects, DatabaseManager.db, currentAllocations, this.currentWorkflowType);
+        // ✨ THE FIX: Bypass standard math if this is a Stocktake, because commitStocktake already applied the exact math!
+        let ledgerResult;
+        if (this.currentWorkflowType.includes('Stocktake')) {
+            ledgerResult = { updatedDb: DatabaseManager.db, updatedAllocations: currentAllocations };
+        } else {
+            ledgerResult = InventoryEngine.commitLedgerMath(this.scannedObjects, DatabaseManager.db, currentAllocations, this.currentWorkflowType);
+        }
+        
         localStorage.setItem('asp_allocations', JSON.stringify(ledgerResult.updatedAllocations));
 
         if (this.pendingFieldUpdates && this.pendingFieldUpdates.length > 0) {
@@ -2019,19 +2026,20 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
     
     this.scannedObjects.forEach(item => {
         if (item.actionTag === 'Reserved' && item.customerTag) {
-            // ✨ FIX: Split the tag to isolate the pure Customer Name (stripping out the Order Number)
             let tag = item.customerTag.split(' - ')[0].trim().toUpperCase();
             let ref = item.ref.toUpperCase();
             
             if (!currentAllocations[tag]) currentAllocations[tag] = {};
             if (!currentAllocations[tag][ref]) currentAllocations[tag][ref] = { qty: 0, details: [] };
             
-            let cleanExp = item.exp || 'NO_EXP';
+            // ✨ FIX: Format NO_LOT and NO_EXP as clean blanks to match standard entries
+            let cleanLot = (item.lot === 'NO_LOT' || item.lot === 'N/A' || item.lot === 'NA') ? '' : item.lot;
+            let cleanExp = (item.exp === 'NO_EXP' || item.exp === 'N/A' || item.exp === 'NA') ? '' : item.exp;
             if (cleanExp.includes('T')) cleanExp = cleanExp.split('T')[0];
             
             currentAllocations[tag][ref].qty += item.qty;
             currentAllocations[tag][ref].details.push({
-                lot: item.lot || 'NO_LOT',
+                lot: cleanLot,
                 exp: cleanExp,
                 qty: item.qty,
                 orderNum: item.orderNum || '',
@@ -2047,7 +2055,8 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
 
     if (madeReservations) {
         localStorage.setItem('asp_allocations', JSON.stringify(currentAllocations));
-        this.syncAllocationsToCloud(); // Push the newly rebuilt reservations to Google Sheets
+        // ✨ FIX: Removed this.syncAllocationsToCloud() to prevent duplicate simultaneous API calls 
+        // since completeSession() is about to fire and handle the cloud push safely!
     }
 
     localStorage.setItem('asp_wh_db', JSON.stringify(DatabaseManager.db));

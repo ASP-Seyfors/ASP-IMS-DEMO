@@ -1974,6 +1974,18 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
       }
     });
 
+    // Calculate variance for Brand New items added during the stocktake
+    this.pendingNewItems.forEach(newItem => {
+      let sku = (newItem.ref || newItem.sku || '').toUpperCase();
+      let counted = scannedTotals[sku] || 0;
+      if (counted > 0) {
+        let costVal = parseFloat(String(newItem.cost || newItem.price || "0").replace(/[^0-9.-]+/g,"")) || 0;
+        let financialVar = counted * costVal;
+        netFinancialImpact += financialVar;
+        varianceData.push({ ref: sku, desc: newItem.desc, mfr: newItem.mfr, expected: 0, counted: counted, variance: counted, financialImpact: financialVar });
+      }
+    });
+
     if (this.currentWorkflowType === 'Full Stocktake') {
       DatabaseManager.db.forEach(dbItem => {
         dbItem.onHand = 0;
@@ -1995,6 +2007,43 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
       }
     });
 
+    // ✨ FIX: Rebuild allocations and reservedQty for items tagged as Reserved during the Stocktake
+    let currentAllocations = JSON.parse(localStorage.getItem('asp_allocations')) || {};
+    let madeReservations = false;
+    
+    this.scannedObjects.forEach(item => {
+        if (item.actionTag === 'Reserved' && item.customerTag) {
+            let tag = item.customerTag.toUpperCase();
+            let ref = item.ref.toUpperCase();
+            if (!currentAllocations[tag]) currentAllocations[tag] = {};
+            if (!currentAllocations[tag][ref]) currentAllocations[tag][ref] = { qty: 0, details: [] };
+            
+            let cleanExp = item.exp || 'NO_EXP';
+            if (cleanExp.includes('T')) cleanExp = cleanExp.split('T')[0];
+            
+            currentAllocations[tag][ref].qty += item.qty;
+            currentAllocations[tag][ref].details.push({
+                lot: item.lot || 'NO_LOT',
+                exp: cleanExp,
+                qty: item.qty,
+                orderNum: item.orderNum || '',
+                sessionId: item.sessionId || this.sessionId
+            });
+            
+            // Re-apply the reservedQty to the master catalog
+            let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref);
+            if (dbItem) dbItem.reservedQty = (dbItem.reservedQty || 0) + item.qty;
+            
+            madeReservations = true;
+        }
+    });
+
+    if (madeReservations) {
+        localStorage.setItem('asp_allocations', JSON.stringify(currentAllocations));
+        this.syncAllocationsToCloud(); // Push the newly rebuilt reservations to Google Sheets
+    }
+
+    // Existing save command:
     localStorage.setItem('asp_wh_db', JSON.stringify(DatabaseManager.db));
     alert("Stocktake successfully committed to the master database!");
     

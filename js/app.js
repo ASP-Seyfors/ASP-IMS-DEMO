@@ -440,10 +440,4 @@ window.sendDeploymentBlast = sendDeploymentBlast;
 window.sendPreDeploymentBlast = sendPreDeploymentBlast;
 window.exportAppsScriptFiles = exportAppsScriptFiles; 
 
-// ✅ FIX: Actually implemented the function so it doesn't crash the app
-window.openActiveShipmentsHub = () => {
-    let modal = document.getElementById('shipmentTrackingModal');
-    if (modal) modal.style.display = 'flex';
-};
-
 window.forceAppUpdate = forceAppUpdate;

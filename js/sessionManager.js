@@ -2020,8 +2020,10 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
     
     this.scannedObjects.forEach(item => {
         if (item.actionTag === 'Reserved' && item.customerTag) {
-            let tag = item.customerTag.toUpperCase();
+            // ✨ FIX: Split the tag to isolate the pure Customer Name (stripping out the Order Number)
+            let tag = item.customerTag.split(' - ')[0].trim().toUpperCase();
             let ref = item.ref.toUpperCase();
+            
             if (!currentAllocations[tag]) currentAllocations[tag] = {};
             if (!currentAllocations[tag][ref]) currentAllocations[tag][ref] = { qty: 0, details: [] };
             

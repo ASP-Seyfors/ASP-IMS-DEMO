@@ -156,7 +156,7 @@ const AuditManager = {
       group.scans.forEach(scan => {
         let statusIcon = scan.actionTag === 'Reserved' ? '🚩' : (scan.actionTag === 'Pack & Ship' ? '🖐️' : '📦');
         let noteHtml = scan.itemNote ? `<div style="font-size:0.8rem; color:#d32f2f; margin-top:6px;"><em>Note: ${scan.itemNote}</em></div>` : '';
-        let tagHtml = isTagWorkflow ? `<label style="font-weight:bold; font-size:0.8rem; margin-left:6px;">Tag:</label><input type="text" id="editTag_${scan.originalIndex}" value="${scan.customerTag || ''}" style="flex:1; padding:4px; text-transform:uppercase;">` : `<input type="hidden" id="editTag_${scan.originalIndex}" value="">`;
+        let tagHtml = isTagWorkflow ? `<label style="font-weight:bold; font-size:0.8rem; margin-left:6px;">Tag:</label><input type="text" id="editTag_${scan.originalIndex}" value="${scan.customerTag || ''}" style="flex:1; padding:4px; text-transform:uppercase;">` : `<input type="hidden" id="editTag_${scan.originalIndex}" value="${scan.customerTag || ''}">`;
 
         // ✨ FIX: Replaced background:#f5f5f5 and border:#e0e0e0 with CSS Variables!
         content.innerHTML += `

@@ -1861,8 +1861,9 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
         if (this.currentWorkflowType.includes('Stocktake')) {
             ledgerResult = { updatedDb: DatabaseManager.db };
         } else {
-            // Call engine for DB onHand updates, but pass our perfectly structured allocations object
-            ledgerResult = InventoryEngine.commitLedgerMath(this.scannedObjects, DatabaseManager.db, currentAllocations, this.currentWorkflowType);
+            // ✨ THE FIX: Create a Dummy Clone to block the engine from duplicating the allocations array!
+            let dummyAllocationsForEngine = JSON.parse(JSON.stringify(currentAllocations));
+            ledgerResult = InventoryEngine.commitLedgerMath(this.scannedObjects, DatabaseManager.db, dummyAllocationsForEngine, this.currentWorkflowType);
         }
 
         // We explicitly use our manually crafted Allocations object here to guarantee the payload is formatted safely for Google!

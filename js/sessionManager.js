@@ -1994,12 +1994,15 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
     if (this.currentWorkflowType === 'Full Stocktake') {
       DatabaseManager.db.forEach(dbItem => {
         dbItem.onHand = 0;
-        // ✨ FIX: Leave dbItem.reservedQty and asp_allocations untouched so customer orders aren't destroyed
+        dbItem.reservedQty = 0; // Wipe reserved totals so they can be accurately rebuilt
       });
+      // Wipe the active allocations memory so it can be rebuilt from the physical scan
+      localStorage.setItem('asp_allocations', JSON.stringify({}));
     } else {
       Object.keys(scannedTotals).forEach(ref => {
         let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref);
         if (dbItem) dbItem.onHand = 0;
+        // Note: Selective stocktakes do not wipe reservations, only the onHand of the specific items counted
       });
     }
 

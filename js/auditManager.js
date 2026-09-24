@@ -914,7 +914,7 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
     }
     
     let modal = document.getElementById('internalReportOptionsModal');
-    if (modal) modal.remove();
+    if (modal) modal.style.display = 'none'; // Changed from modal.remove()
   },
 
   // ==========================================================================
@@ -1179,10 +1179,11 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
       let safeTitle = filename.replace(/\./g, '\u2024');
       win.document.title = safeTitle; 
       win.focus(); 
-      setTimeout(() => win.print(), UIManager.printTimeout); // Increased timeout
+      setTimeout(() => win.print(), UIManager.printTimeout); 
     }
 
-    document.getElementById('stockReportEditorModal').remove();
+    // ✨ FIX: Hide the modal instead of destroying it
+    document.getElementById('stockReportEditorModal').style.display = 'none';
   },
 
   getHistoricalCustomerData(cust, limit = '10') {

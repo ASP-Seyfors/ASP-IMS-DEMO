@@ -569,10 +569,9 @@ const UIManager = {// GLOBAL CONFIGURATIONS
     if (document.getElementById('actBtnRes')) document.getElementById('actBtnRes').className = 'action-btn' + (act === 'Reserved' ? ' selected-res' : '');
     let tagRow = document.getElementById('rowCustomerTag');
     
-    // ✨ THE FIX: Whitelist Stocktake so the Reserved drop-down appears
-    let isReceivingOrStocktake = SessionManager.currentWorkflowType.includes('Receiving') || SessionManager.currentWorkflowType.includes('Stocktake');
-    
-    if (tagRow && isReceivingOrStocktake) {
+    // ✨ FIX: Allow the tag row to appear during Stocktakes so reservations can be logged
+    let wType = SessionManager.currentWorkflowType.toUpperCase();
+    if (tagRow && (wType.includes('RECEIVING') || wType.includes('STOCKTAKE'))) {
         tagRow.style.display = (act === 'Reserved') ? 'flex' : 'none';
     }
   },

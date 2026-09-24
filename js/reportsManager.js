@@ -202,7 +202,7 @@ const ReportsManager = {
     }
     
     let modal = document.getElementById('inventoryReportOptionsModal');
-    if (modal) modal.remove();
+    if (modal) modal.style.display = 'none'; // Changed from modal.remove()
   },
 
   generateVarianceReportPDF(varianceData, mode, netFinancialImpact) {

@@ -1544,14 +1544,18 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
     return `https://www.google.com/search?q=${encodeURIComponent(mfr + ' ' + ref)}`;
   },
 
-  // ✨ NEW: Ask Apps Script to scrape the Ethicon Website
   async autoFetchEthicon(ref, index) {
     let btn = document.getElementById(`btnEthiconFetch_${index}`);
     if (btn) { btn.textContent = "⏳ Fetching..."; btn.disabled = true; }
     
     try {
-      let res = await fetch(`${this.getActiveArchiveUrl()}?action=FETCH_ETHICON&ref=${encodeURIComponent(ref)}`);
-      let data = await res.json();
+      // ✨ FIX: Changed "this" to SessionManager
+      let res = await fetch(`${SessionManager.getActiveArchiveUrl()}?action=FETCH_ETHICON&ref=${encodeURIComponent(ref)}`);
+      let text = await res.text();
+      let data;
+      
+      // ✨ FIX: Catch Google HTML Rate Limit pages safely
+      try { data = JSON.parse(text); } catch(e) { throw new Error("Google Server busy. Try again in 5 seconds."); }
       
       if (data.status === "success" && data.desc) {
          let input = document.getElementById(`advDesc_${index}`);

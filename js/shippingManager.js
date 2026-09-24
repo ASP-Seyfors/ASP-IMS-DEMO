@@ -467,7 +467,16 @@ const ShippingManager = {
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify(payload)
             });
-            let data = await res.json();
+            
+            // ✨ FIX: Parse as text first to prevent HTML errors from crashing the app
+            let text = await res.text();
+            let data;
+            try { 
+                data = JSON.parse(text); 
+            } catch(e) { 
+                throw new Error("Google Server busy. Please try logging the tracking number again."); 
+            }
+            
             if (data.status === "success") {
                 this.skipAndComplete(); 
             } else {

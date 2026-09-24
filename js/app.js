@@ -333,6 +333,12 @@ window.masterSystemSync = async (event) => {
     if (typeof DatabaseManager.downloadCloudDatabase === 'function') {
       await DatabaseManager.downloadCloudDatabase(null, true);
     }
+    
+    // ✨ FIX: Must pull the fresh ledger so ghost data is wiped and the upload gate unlocks!
+    if (typeof SessionManager.fetchAllocationsFromCloud === 'function') {
+      await SessionManager.fetchAllocationsFromCloud();
+    }
+    
     updateStep(2, "Master Database Synced", 100);
 
     setTimeout(() => {
@@ -401,7 +407,7 @@ window.returnToEdit = () => SessionManager.returnToEdit();
 window.cancelScannedItem = () => SessionManager.cancelScannedItem();
 window.saveItemLog = () => SessionManager.saveItemLog();
 window.clearManifestList = () => SessionManager.clearManifestList();
-window.triggerQboSync = () => SessionManager.triggerQboSync(e);
+window.triggerQboSync = (e) => SessionManager.triggerQboSync(e);
 window.offloadAndPurgeHistory = (e) => SessionManager.offloadAndPurgeHistory(e);
 
 window.scanDocumentOCR = (e) => ScannerManager.scanDocumentOCR(e);

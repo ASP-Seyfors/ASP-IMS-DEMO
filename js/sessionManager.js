@@ -1956,6 +1956,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
     let varianceData = [];
     let netFinancialImpact = 0;
 
+    // 1. Calculate Variance for ALL items (Existing and Brand New)
     DatabaseManager.db.forEach(dbItem => {
       let sku = (dbItem.sku || dbItem.ref || '').toUpperCase();
       let expected = dbItem.onHand || 0;
@@ -1974,25 +1975,27 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
       }
     });
 
-    // Calculate variance for Brand New items added during the stocktake
-    this.pendingNewItems.forEach(newItem => {
-      let sku = (newItem.ref || newItem.sku || '').toUpperCase();
-      let counted = scannedTotals[sku] || 0;
-      if (counted > 0) {
-        let costVal = parseFloat(String(newItem.cost || newItem.price || "0").replace(/[^0-9.-]+/g,"")) || 0;
+    // Check for Brand New REFs that aren't in the DB yet
+    Object.keys(scannedTotals).forEach(sku => {
+      let dbMatch = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === sku.toUpperCase());
+      if (!dbMatch) {
+        let counted = scannedTotals[sku];
+        let scanObj = this.scannedObjects.find(i => i.ref.toUpperCase() === sku.toUpperCase());
+        
+        let costVal = scanObj ? parseFloat(String(scanObj.price || "0").replace(/[^0-9.-]+/g,"")) || 0 : 0;
         let financialVar = counted * costVal;
         netFinancialImpact += financialVar;
-        varianceData.push({ ref: sku, desc: newItem.desc, mfr: newItem.mfr, expected: 0, counted: counted, variance: counted, financialImpact: financialVar });
+        
+        varianceData.push({ ref: sku, desc: scanObj ? scanObj.desc : "New Item", mfr: scanObj ? scanObj.mfr : "N/A", expected: 0, counted: counted, variance: counted, financialImpact: financialVar });
       }
     });
 
+    // 2. Clear Database Totals
     if (this.currentWorkflowType === 'Full Stocktake') {
       DatabaseManager.db.forEach(dbItem => {
         dbItem.onHand = 0;
-        dbItem.reservedQty = 0; 
+        // ✨ FIX: Leave dbItem.reservedQty and asp_allocations untouched so customer orders aren't destroyed
       });
-      // ✨ FIX: Completely wipe the live allocations ledger so it can be rebuilt from scratch
-      localStorage.setItem('asp_allocations', JSON.stringify({}));
     } else {
       Object.keys(scannedTotals).forEach(ref => {
         let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref);
@@ -2000,6 +2003,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
       });
     }
 
+    // 3. Apply Scanned Totals
     Object.keys(scannedTotals).forEach(ref => {
       let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref);
       if (dbItem) {
@@ -2007,7 +2011,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
       }
     });
 
-    // ✨ FIX: Rebuild allocations and reservedQty for items tagged as Reserved during the Stocktake
+    // 4. ✨ FIX: Process new Reservations made during the Stocktake
     let currentAllocations = JSON.parse(localStorage.getItem('asp_allocations')) || {};
     let madeReservations = false;
     
@@ -2030,7 +2034,6 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
                 sessionId: item.sessionId || this.sessionId
             });
             
-            // Re-apply the reservedQty to the master catalog
             let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref);
             if (dbItem) dbItem.reservedQty = (dbItem.reservedQty || 0) + item.qty;
             
@@ -2043,7 +2046,6 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
         this.syncAllocationsToCloud(); // Push the newly rebuilt reservations to Google Sheets
     }
 
-    // Existing save command:
     localStorage.setItem('asp_wh_db', JSON.stringify(DatabaseManager.db));
     alert("Stocktake successfully committed to the master database!");
     

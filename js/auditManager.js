@@ -1054,9 +1054,11 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
     let container = document.getElementById('reportItemRowsContainer');
     let rows = container.querySelectorAll('.flyer-item-row');
     
-    let html = `<div id="flyerCanvasTarget" style="font-family: Arial, sans-serif; font-size: 14px; width: 700px; padding: 20px; background-color: #ffffff; color: #333333;">`;
+    let html = `<div style="font-family: Arial, sans-serif; font-size: 14px; width: 700px; padding: 20px; background-color: #ffffff; color: #333333;">`;
     
-    if (flyerNote) { html += `<div style="white-space: pre-wrap; margin-bottom: 15px; font-size: 13px;">${flyerNote}</div>`; }
+    if (flyerNote) { 
+        html += `<div style="white-space: pre-wrap; margin-bottom: 15px; font-size: 13px;">${flyerNote}</div>`; 
+    }
 
     html += `<table style="border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 13px; margin-top: 15px; margin-bottom: 15px;">
       <thead>
@@ -1071,11 +1073,24 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
       
     rows.forEach(r => {
       let chk = r.querySelector('.flyer-chk');
-      if (chk && !chk.checked) return;
+      if (chk && chk.checked === false) return;
 
-      let ref = r.querySelector('.rep-ref').value.trim(); let desc = r.querySelector('.rep-desc').value.trim();
-      let qty = r.querySelector('.rep-qty').value.trim(); let price = r.querySelector('.rep-price').value.trim();
-      let formattedPrice = price ? (price.startsWith('$') || isNaN(parseFloat(price.replace(/[^0-9.-]+/g,""))) ? price : '$' + price) : 'Call for Price';
+      let ref = r.querySelector('.rep-ref').value.trim(); 
+      let desc = r.querySelector('.rep-desc').value.trim();
+      let qty = r.querySelector('.rep-qty').value.trim(); 
+      let price = r.querySelector('.rep-price').value.trim();
+      
+      let formattedPrice = 'Call for Price';
+      if (price) {
+          let numPrice = parseFloat(price.replace(/[^0-9.-]+/g, ""));
+          if (price.startsWith('$')) {
+              formattedPrice = price;
+          } else if (isNaN(numPrice)) {
+              formattedPrice = price;
+          } else {
+              formattedPrice = '$' + price;
+          }
+      }
 
       if (ref) {
         html += `<tr style="background-color: #ffffff;">
@@ -1089,23 +1104,18 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
     
     html += `</tbody></table></div>`;
       
-    let tempDiv = document.createElement('div'); tempDiv.innerHTML = html;
-    tempDiv.style.position = 'absolute'; tempDiv.style.left = '-9999px'; tempDiv.style.top = '-9999px';
-    document.body.appendChild(tempDiv);
-    
-    let target = document.getElementById('flyerCanvasTarget');
-    if (typeof html2canvas !== 'undefined') {
-      html2canvas(target, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
-        canvas.toBlob(blob => {
-          try {
-            navigator.clipboard.write([new window.ClipboardItem({'image/png': blob})]).then(() => {
-              UIManager.showCustomAlert("Success", "✅ The flyer has been copied to your clipboard as a picture. You can now safely paste it into your email draft.");
-            });
-          } catch (e) { UIManager.showCustomAlert("Notice", "Clipboard image copy not fully supported by this browser. Falling back to HTML."); }
-        }, 'image/png');
-        document.body.removeChild(tempDiv);
+    try {
+      // Write the HTML directly to the clipboard
+      const clipboardItem = new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob(["ASP Custom Flyer"], { type: "text/plain" })
       });
-    } else { document.body.removeChild(tempDiv); UIManager.showCustomAlert("Loading", "Image rendering library is loading. Please try again in a few seconds."); }
+      navigator.clipboard.write([clipboardItem]).then(() => {
+          UIManager.showCustomAlert("Success", "✅ Flyer copied to clipboard! You can now paste it directly into your email draft.");
+      });
+    } catch (e) { 
+      UIManager.showCustomAlert("Error", "Clipboard copy not supported by this browser. Please use the PDF export instead."); 
+    }
   },
 
   exportCustomerStockReportPDF(cust) {

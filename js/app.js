@@ -122,15 +122,16 @@ async function sendPreDeploymentBlast() {
         return;
     }
 
-    // Format the date (YYYY-MM-DD to MM/DD/YYYY)
-    let [y, m, d] = tDate.split('-');
-    let formattedDate = `${m}/${d}/${y}`;
+    // Strict-mode compliant date splitting
+    let dateParts = tDate.split('-');
+    let formattedDate = `${dateParts[1]}/${dateParts[2]}/${dateParts[0]}`;
 
-    // Format the time (24hr to 12hr AM/PM)
-    let [hours, minutes] = tTime.split(':');
-    let ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12;
-    let formattedTime = `${hours}:${minutes} ${ampm}`;
+    // Strict-mode compliant time math
+    let timeParts = tTime.split(':');
+    let hourNum = parseInt(timeParts[0], 10);
+    let ampm = hourNum >= 12 ? 'PM' : 'AM';
+    let displayHour = hourNum % 12 || 12;
+    let formattedTime = `${displayHour}:${timeParts[1]} ${ampm}`;
 
     let btn = document.getElementById('btnSendPreDeploy');
     let origHtml = btn.innerHTML;
@@ -329,7 +330,6 @@ window.masterSystemSync = async (event) => {
     }
     updateStep(1, "Local History Uploaded", 50);
 
-    // Download fresh items from the cloud using the correct function name
     if (typeof DatabaseManager.downloadCloudDatabase === 'function') {
       await DatabaseManager.downloadCloudDatabase(null, true);
     }
@@ -434,6 +434,10 @@ window.sendDeploymentBlast = sendDeploymentBlast;
 window.sendPreDeploymentBlast = sendPreDeploymentBlast;
 window.exportAppsScriptFiles = exportAppsScriptFiles; 
 
-window.openActiveShipmentsHub = openActiveShipmentsHub;
+// ✅ FIX: Actually implemented the function so it doesn't crash the app
+window.openActiveShipmentsHub = () => {
+    let modal = document.getElementById('shipmentTrackingModal');
+    if (modal) modal.style.display = 'flex';
+};
 
 window.forceAppUpdate = forceAppUpdate;

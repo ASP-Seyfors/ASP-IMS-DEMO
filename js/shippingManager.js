@@ -48,6 +48,7 @@ const ShippingManager = {
     },
 
     updateCarrierUI() {
+        this.resetRateDisplay(); // ✨ Added Reset
         let carrier = document.getElementById('shipCarrier').value.toUpperCase();
         let btn = document.getElementById('btnGenerateLabel');
         if (!btn) return;
@@ -64,6 +65,189 @@ const ShippingManager = {
             btn.style.color = "#fff";
         }
         if (typeof lucide !== 'undefined') lucide.createIcons();
+    },
+
+    // ✨ NEW: Resets the UI so the user is forced to click "Calculate" again if they change a setting
+    resetQuoteUI() {
+        let calcBtn = document.getElementById('btnCalculateRate');
+        let priceBox = document.getElementById('shipPriceDisplay');
+        if (calcBtn && priceBox) {
+            calcBtn.style.display = 'flex';
+            calcBtn.innerHTML = `<i data-lucide="calculator" style="width:20px; height:20px;"></i> Recalculate Rate`;
+            priceBox.style.display = 'none';
+        }
+    },
+
+    // ✨ NEW: The Master Rate Calculator Function
+    async calculateShippingRate() {
+        let btn = document.getElementById('btnCalculateRate');
+        let priceBox = document.getElementById('shipPriceDisplay');
+        let costText = document.getElementById('shipEstimatedCost');
+        let valBadge = document.getElementById('shipValidationBadge');
+        
+        let origHtml = btn.innerHTML;
+        btn.innerHTML = "⏳ Validating & Quoting...";
+        btn.disabled = true;
+
+        try {
+            let isResidential = document.querySelector('input[name="shipAddressType"]:checked').value === 'residential';
+            let serviceType = document.getElementById('shipServiceType').value;
+
+            // STEP 1: Validate Address
+            let valPayload = {
+                action: "VALIDATE_ADDRESS",
+                payload: {
+                    street: document.getElementById('shipAddress1').value.trim(),
+                    street2: document.getElementById('shipAddress2').value.trim(),
+                    city: document.getElementById('shipAddressCity').value.trim(),
+                    state: document.getElementById('shipAddressState').value.trim(),
+                    zip: document.getElementById('shipAddressZip').value.trim(),
+                    country: document.getElementById('shipAddressCountry').value.trim() || "US"
+                }
+            };
+
+            let valRes = await fetch(SessionManager.getActiveArchiveUrl(), {
+                method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(valPayload)
+            });
+            let valData = await valRes.json();
+
+            if (valData.status !== "success" || !valData.isValid) {
+                UIManager.showCustomAlert("Address Validation Failed", "FedEx rejected this address. Please double-check the Street, City, State, and Zip.<br><br><b>FedEx Note:</b> " + (valData.cleansedAddress || "No match found."), true);
+                return; // Safely exits, but FINALLY block below will re-enable the button!
+            }
+
+            if (valData.isResidential !== isResidential) {
+                document.querySelector(`input[name="shipAddressType"][value="${valData.isResidential ? 'residential' : 'commercial'}"]`).checked = true;
+                isResidential = valData.isResidential;
+            }
+
+            // STEP 2: Fetch Live Rate Quote
+            let quotePayload = {
+                action: "GET_FEDEX_RATE",
+                payload: {
+                    zip: document.getElementById('shipAddressZip').value.trim(),
+                    country: document.getElementById('shipAddressCountry').value.trim() || "US",
+                    serviceType: serviceType,
+                    isResidential: isResidential,
+                    account: document.getElementById('shipAccountNum').value.trim(),
+                    totalWeight: document.getElementById('shipWeight').value,
+                    dimL: document.getElementById('shipDimL').value || 12,
+                    dimW: document.getElementById('shipDimW').value || 6,
+                    dimH: document.getElementById('shipDimH').value || 6
+                }
+            };
+
+            let rateRes = await fetch(SessionManager.getActiveArchiveUrl(), {
+                method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(quotePayload)
+            });
+            let rateData = await rateRes.json();
+
+            if (rateData.status === "success") {
+                btn.style.display = 'none';
+                priceBox.style.display = 'flex';
+                costText.innerText = "$" + parseFloat(rateData.netCharge).toFixed(2);
+                valBadge.innerHTML = `<i data-lucide="check-circle" style="width:14px; height:14px; vertical-align:text-bottom;"></i> Validated ${isResidential ? "Residential" : "Commercial"} Address`;
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            } else {
+                UIManager.showCustomAlert("Rate Quote Failed", rateData.message, true);
+            }
+
+        } catch (err) {
+            UIManager.showCustomAlert("Connection Error", err.message, true);
+        } finally {
+            // ✨ GUARANTEE: This always runs, ensuring the button never freezes permanently
+            if (btn) {
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+            }
+        }
+    },
+
+    resetRateDisplay() {
+        let rateDisplay = document.getElementById('shipRateDisplay');
+        let btnCalc = document.getElementById('btnCalculateRate');
+        let btnBuy = document.getElementById('btnGenerateLabel');
+        if (rateDisplay) rateDisplay.style.display = 'none';
+        if (btnBuy) btnBuy.style.display = 'none';
+        if (btnCalc) btnCalc.style.display = 'flex';
+    },
+
+    async calculateFedExRate() {
+        let btn = document.getElementById('btnCalculateRate');
+        let origText = btn.innerHTML;
+        let rateDisplay = document.getElementById('shipRateDisplay');
+        let msgEl = document.getElementById('shipValidationMsg');
+        let rateEl = document.getElementById('shipRateAmount');
+        let buyBtn = document.getElementById('btnGenerateLabel');
+        
+        btn.innerHTML = "⏳ Validating & Quoting...";
+        btn.disabled = true;
+        rateDisplay.style.display = 'none';
+        buyBtn.style.display = 'none';
+
+        let serviceType = document.getElementById('shipServiceType').value;
+        let isResidential = document.querySelector('input[name="shipAddressType"]:checked').value === 'residential';
+        
+        let payloadData = {
+            street: document.getElementById('shipAddress1').value.trim(),
+            street2: document.getElementById('shipAddress2').value.trim(),
+            city: document.getElementById('shipAddressCity').value.trim(),
+            state: document.getElementById('shipAddressState').value.trim(),
+            zip: document.getElementById('shipAddressZip').value.trim(),
+            country: document.getElementById('shipAddressCountry').value.trim() || "US",
+            serviceType: serviceType,
+            isResidential: isResidential,
+            account: document.getElementById('shipAccountNum').value.trim(),
+            totalWeight: document.getElementById('shipWeight').value,
+            dimL: document.getElementById('shipDimL').value || 12,
+            dimW: document.getElementById('shipDimW').value || 6,
+            dimH: document.getElementById('shipDimH').value || 6
+        };
+
+        try {
+            // 1. Validate Address
+            let valRes = await fetch(SessionManager.getActiveArchiveUrl(), {
+                method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: "VALIDATE_ADDRESS", payload: payloadData })
+            });
+            let valData = await valRes.json();
+            
+            if (valData.status !== "success" || !valData.isValid) {
+                alert("Address Validation Failed! Please double check the Street, City, State, and Zip.\n\nFedEx Note: " + (valData.cleansedAddress || "Invalid Address"));
+                btn.innerHTML = origText; btn.disabled = false;
+                return;
+            }
+            
+            // Auto-check residential radio if FedEx detected it was a house
+            if (valData.isResidential) {
+                document.querySelector('input[name="shipAddressType"][value="residential"]').checked = true;
+                payloadData.isResidential = true;
+            }
+
+            // 2. Get Rate Quote
+            let rateRes = await fetch(SessionManager.getActiveArchiveUrl(), {
+                method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: "GET_FEDEX_RATE", payload: payloadData })
+            });
+            let rateData = await rateRes.json();
+
+            if (rateData.status === "success") {
+                msgEl.innerText = valData.isResidential ? "✅ Validated Residential Address" : "✅ Validated Commercial Address";
+                rateEl.innerText = "$" + parseFloat(rateData.netCharge || 0).toFixed(2);
+                
+                rateDisplay.style.display = 'flex';
+                btn.style.display = 'none'; // Hide calc button
+                buyBtn.style.display = 'flex'; // Show buy button
+            } else {
+                alert("Rate Quote Failed: " + rateData.message);
+            }
+        } catch (err) {
+            alert("Network Error: " + err.message);
+        } finally {
+            if (btn) { btn.innerHTML = origText; btn.disabled = false; }
+        }
     },
 
     async generateFedExLabel() {
@@ -394,6 +578,7 @@ const ShippingManager = {
     },
 
     handleBoxSizeChange() {
+        this.resetRateDisplay(); // ✨ Added Reset
         let val = document.getElementById('shipBoxSize').value;
         if (val === 'XS') { document.getElementById('shipDimL').value = 8; document.getElementById('shipDimW').value = 8; document.getElementById('shipDimH').value = 8; }
         else if (val === 'S') { document.getElementById('shipDimL').value = 12; document.getElementById('shipDimW').value = 6; document.getElementById('shipDimH').value = 6; }
@@ -515,18 +700,20 @@ const ShippingManager = {
             modal = document.createElement('div');
             modal.id = 'incomingShipmentModal';
             modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:999999; display:none; justify-content:center; align-items:center; padding:15px; box-sizing:border-box;';
+            
+            // ✨ FIX: Swapped hardcoded hex colors for dynamic CSS variables
             modal.innerHTML = `
-              <div style="background:#fff; border-radius:8px; width:100%; max-width:550px; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.6); max-height:85vh;">
+              <div style="background:var(--card-bg, #ffffff); border-radius:8px; width:100%; max-width:550px; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.6); max-height:85vh;">
                 <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:3px solid #f57f17; padding:15px 20px; flex-shrink:0;">
                   <h2 style="margin:0; color:#f57f17; font-size:1.3rem;">📥 Verify Incoming Shipments</h2>
-                  <button onclick="ShippingManager.skipIncomingShipments()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:#333;">&times;</button>
+                  <button onclick="ShippingManager.skipIncomingShipments()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:var(--text-main, #333);">&times;</button>
                 </div>
-                <div style="padding:15px 20px; font-size:0.95rem; color:#555; background:#fff3e0; border-bottom:1px solid #ffcc80;">
+                <div style="padding:15px 20px; font-size:0.95rem; color:var(--text-main, #555); background:rgba(245, 127, 23, 0.1); border-bottom:1px solid var(--border-color, #ffcc80);">
                     Check any shipments below that arrived in this delivery. This will automatically mark them as "Delivered" and "Quality Checked" in your Google Sheet.
                 </div>
                 <div id="incomingShipmentList" style="padding:15px 20px; overflow-y:auto; flex-grow:1; display:flex; flex-direction:column; gap:8px;">
                 </div>
-                <div style="padding:15px 20px; border-top:1px solid #eee; display:flex; gap:10px; flex-shrink:0;">
+                <div style="padding:15px 20px; border-top:1px solid var(--border-color, #eee); display:flex; gap:10px; flex-shrink:0;">
                   <button onclick="ShippingManager.skipIncomingShipments()" style="background:#757575; color:#fff; flex:1; padding:12px; border-radius:4px; border:none; cursor:pointer; font-weight:bold;">Skip</button>
                   <button id="btnConfirmIncoming" onclick="ShippingManager.confirmIncomingShipments()" style="background:#f57f17; color:#fff; flex:2; padding:12px; border-radius:4px; border:none; cursor:pointer; font-weight:bold;">Verify Checked Items</button>
                 </div>
@@ -536,7 +723,7 @@ const ShippingManager = {
         }
         
         let list = document.getElementById('incomingShipmentList');
-        list.innerHTML = '<div style="text-align:center; padding:20px; color:#0277bd;">⏳ Loading pending incoming shipments...</div>';
+        list.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-main, #0277bd);">⏳ Loading pending incoming shipments...</div>';
         modal.style.display = 'flex';
         
         try {
@@ -553,13 +740,15 @@ const ShippingManager = {
             let html = '';
             data.incoming.forEach(s => {
                 let dStr = s.date ? new Date(s.date).toLocaleDateString() : 'Unknown Date';
+                
+                // ✨ FIX: Used a transparent background tint so the cards naturally adapt to Light/Dark mode backgrounds
                 html += `
-                <label style="display:flex; align-items:flex-start; gap:12px; padding:12px; border:1px solid #ddd; border-radius:6px; cursor:pointer; background:#f9f9f9; transition: background 0.2s;">
+                <label style="display:flex; align-items:flex-start; gap:12px; padding:12px; border:1px solid var(--border-color, #ccc); border-radius:6px; cursor:pointer; background:rgba(128, 128, 128, 0.08); transition: background 0.2s;">
                     <input type="checkbox" class="incoming-chk" value="${s.rowIdx}" style="margin-top:2px; width:20px; height:20px; cursor:pointer;">
                     <div style="flex:1;">
-                       <strong style="color:#0277bd; font-size:1.05rem;">${s.partner}</strong> <span style="color:#777; font-size:0.8rem; float:right;">${dStr}</span><br>
-                       <span style="color:#333; font-size:0.9rem; font-weight:bold;">PO/Invoice: ${s.po || 'N/A'}</span><br>
-                       <span style="color:#555; font-size:0.85rem;">Carrier: ${s.carrier || 'N/A'} | Tracking: ${s.tracking || 'N/A'}</span>
+                       <strong style="color:var(--primary-color, #0277bd); font-size:1.05rem;">${s.partner}</strong> <span style="color:var(--text-muted, #777); font-size:0.8rem; float:right;">${dStr}</span><br>
+                       <span style="color:var(--text-main, #333); font-size:0.9rem; font-weight:bold;">PO/Invoice: ${s.po || 'N/A'}</span><br>
+                       <span style="color:var(--text-muted, #777); font-size:0.85rem;">Carrier: ${s.carrier || 'N/A'} | Tracking: ${s.tracking || 'N/A'}</span>
                     </div>
                 </label>
                 `;

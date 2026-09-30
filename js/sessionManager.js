@@ -1794,92 +1794,27 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
 
         let currentAllocations = JSON.parse(localStorage.getItem('asp_allocations')) || {};
 
-        // ✨ THE FIX: Skip this manual loop during Stocktakes, because commitStocktake already perfectly built the array! 
-        // This stops completeSession from stacking duplicate entries on top of the Stocktake ones.
-        if (!this.currentWorkflowType.includes('Stocktake')) {
-            this.scannedObjects.forEach(item => {
-              // Inherit the tag from the manifest if doing a Pick & Pack
-              if (this.currentWorkflowType.includes('Packing') && this.isManifestEnabled) {
-                 let manifestItem = this.expectedManifest.find(m => m.ref === item.ref.toUpperCase());
-                 if (manifestItem && manifestItem.allocations && manifestItem.allocations.length > 0) { 
-                     item.customerTag = manifestItem.allocations[0].customerTag; 
-                 }
-              }
-
-              if (item.actionTag === 'Reserved' && item.customerTag) {
-                  let tag = item.customerTag.split(' - ')[0].trim().toUpperCase();
-                  let ref = item.ref.toUpperCase();
-                  
-                  if (!currentAllocations[tag]) currentAllocations[tag] = {};
-                  if (!currentAllocations[tag][ref]) currentAllocations[tag][ref] = { qty: 0, details: [] };
-                  
-                  let cleanLot = (item.lot === 'NO_LOT' || item.lot === 'N/A' || item.lot === 'NA') ? '' : item.lot;
-                  let cleanExp = (item.exp === 'NO_EXP' || item.exp === 'N/A' || item.exp === 'NA') ? '' : item.exp;
-                  if (cleanExp.includes('T')) cleanExp = cleanExp.split('T')[0];
-                  
-                  currentAllocations[tag][ref].qty += item.qty;
-                  currentAllocations[tag][ref].details.push({
-                      lot: cleanLot,
-                      exp: cleanExp,
-                      qty: item.qty,
-                      orderNum: item.orderNum || '',
-                      sessionId: item.sessionId || this.sessionId
-                  });
-              } else if (item.actionTag === 'Pack & Ship' && item.customerTag) {
-                  let tag = item.customerTag.split(' - ')[0].trim().toUpperCase();
-                  let ref = item.ref.toUpperCase();
-                  
-                  if (currentAllocations[tag] && currentAllocations[tag][ref]) {
-                      let itemData = currentAllocations[tag][ref];
-                      
-                      if (itemData.details && itemData.details.length > 0) {
-                          let cleanLot = (item.lot === 'NO_LOT' || item.lot === 'N/A' || item.lot === 'NA') ? '' : item.lot;
-                          let cleanExp = (item.exp === 'NO_EXP' || item.exp === 'N/A' || item.exp === 'NA') ? '' : item.exp;
-                          if (cleanExp.includes('T')) cleanExp = cleanExp.split('T')[0];
-                          
-                          let detMatch = itemData.details.find(d => d.lot === cleanLot && d.exp === cleanExp);
-                          if (detMatch) {
-                              detMatch.qty -= item.qty;
-                              if (detMatch.qty <= 0) itemData.details = itemData.details.filter(d => d !== detMatch);
-                          } else if (itemData.details[0]) {
-                              itemData.details[0].qty -= item.qty;
-                              if (itemData.details[0].qty <= 0) itemData.details.shift();
-                          }
-                      }
-                      
-                      if (typeof itemData === 'object') {
-                          itemData.qty -= item.qty;
-                          if (itemData.qty <= 0) delete currentAllocations[tag][ref];
-                      } else {
-                          currentAllocations[tag][ref] -= item.qty;
-                          if (currentAllocations[tag][ref] <= 0) delete currentAllocations[tag][ref];
-                      }
-                      
-                      if (Object.keys(currentAllocations[tag]).length === 0) delete currentAllocations[tag];
-                  }
-              }
-            });
-        }
-
-        // Execute DB updates separately
-        if (this.pendingNewItems && this.pendingNewItems.length > 0) {
-          this.pendingNewItems.forEach(newItem => { 
-            let exists = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === (newItem.ref || newItem.sku || '').toUpperCase()); 
-            if (!exists) DatabaseManager.db.push(newItem); 
-          });
-        }
-
+        // ✨ THE FIX: Removed the buggy manual loop and handed full control back to the mathematically bulletproof InventoryEngine
         let ledgerResult;
         if (this.currentWorkflowType.includes('Stocktake')) {
             ledgerResult = { updatedDb: DatabaseManager.db };
         } else {
-            // ✨ THE FIX: Create a Dummy Clone to block the engine from duplicating the allocations array!
-            let dummyAllocationsForEngine = JSON.parse(JSON.stringify(currentAllocations));
-            ledgerResult = InventoryEngine.commitLedgerMath(this.scannedObjects, DatabaseManager.db, dummyAllocationsForEngine, this.currentWorkflowType);
+            this.scannedObjects.forEach(item => {
+                // Inherit the tag from the manifest if doing a Pick & Pack
+                if (this.currentWorkflowType.includes('Packing') && this.isManifestEnabled) {
+                    let manifestItem = this.expectedManifest.find(m => m.ref === item.ref.toUpperCase());
+                    if (manifestItem && manifestItem.allocations && manifestItem.allocations.length > 0) {
+                        item.customerTag = manifestItem.allocations[0].customerTag;
+                    }
+                }
+            });
+            
+            // Pass the REAL currentAllocations array to the engine, not a dummy clone!
+            ledgerResult = InventoryEngine.commitLedgerMath(this.scannedObjects, DatabaseManager.db, currentAllocations, this.currentWorkflowType);
         }
 
-        // We explicitly use our manually crafted Allocations object here to guarantee the payload is formatted safely for Google!
-        localStorage.setItem('asp_allocations', JSON.stringify(currentAllocations));
+        // Save the resulting structurally perfect Allocations object generated by the Engine
+        localStorage.setItem('asp_allocations', JSON.stringify(this.currentWorkflowType.includes('Stocktake') ? currentAllocations : ledgerResult.updatedAllocations));
 
         if (this.pendingFieldUpdates && this.pendingFieldUpdates.length > 0) {
           this.pendingFieldUpdates.forEach(update => { 
@@ -2403,7 +2338,23 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
 
     this.scannedObjects[index].qty = newQty;
     this.scannedObjects[index].customerTag = newTag;
-    if (newTag) this.scannedObjects[index].actionTag = 'Reserved';
+    
+    // ✨ THE FIX: Respect the current workflow when assigning the action tag during a manual summary edit
+    if (newTag) {
+        if (this.currentWorkflowType.includes('Packing')) {
+            this.scannedObjects[index].actionTag = 'Pack & Ship';
+        } else if (this.currentWorkflowType.includes('Un-Reserve')) {
+            this.scannedObjects[index].actionTag = 'Un-Reserve';
+        } else {
+            this.scannedObjects[index].actionTag = 'Reserved';
+        }
+    } else {
+        if (this.currentWorkflowType.includes('Packing')) {
+            this.scannedObjects[index].actionTag = 'Pack & Ship';
+        } else {
+            this.scannedObjects[index].actionTag = 'Inventory';
+        }
+    }
 
     localStorage.setItem('asp_session_scanned_objects', JSON.stringify(this.scannedObjects));
     this.updateManifestProgressUI();

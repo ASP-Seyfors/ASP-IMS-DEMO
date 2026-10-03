@@ -2298,6 +2298,28 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
         
         logMsg(`[MATH] Processing ${sess.workflowType}: ${sess.sessionName} (${sess.dateStr})`, '#ffb74d');
 
+        // ✨ THE FIX 1: Inject any New Items or Bundles created during this historical session BEFORE running the math!
+        if (sess.pendingNewItems && sess.pendingNewItems.length > 0) {
+            sess.pendingNewItems.forEach(newItem => {
+                let exists = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === (newItem.ref || newItem.sku || '').toUpperCase());
+                if (!exists) {
+                    DatabaseManager.db.push(newItem);
+                    logMsg(`    + Injected newly created item/bundle: ${newItem.ref}`);
+                }
+            });
+        }
+        
+        // ✨ THE FIX 2: Apply any field updates (GTINs, Mfrs) made during this session
+        if (sess.pendingUpdates && sess.pendingUpdates.length > 0) {
+            sess.pendingUpdates.forEach(upd => {
+                let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === (upd.ref || '').toUpperCase());
+                if (dbItem && upd.field) {
+                    dbItem[upd.field] = upd.newValue;
+                    logMsg(`    + Applied field update to: ${upd.ref}`);
+                }
+            });
+        }
+
         // ==========================================
         // LEGACY DATA TRANSFORMER
         // ==========================================
@@ -2371,7 +2393,7 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
         if (sess.workflowType && sess.workflowType.includes('Stocktake')) {
           let scannedTotals = {};
           transformedScans.forEach(item => {
-            let ref = item.ref;
+            let ref = String(item.ref || item.sku || '').toUpperCase().trim();
             if (!scannedTotals[ref]) scannedTotals[ref] = 0;
             scannedTotals[ref] += item.qty;
           });
@@ -2382,18 +2404,25 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
           } else {
              logMsg(`  - Executing Targeted Selection Stocktake overwrite...`, '#fff');
             Object.keys(scannedTotals).forEach(ref => {
-              let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref);
+              let dbItem = DatabaseManager.db.find(i => String(i.sku || i.ref || '').toUpperCase().trim() === ref);
               if (dbItem) dbItem.onHand = 0;
             });
           }
 
+          logMsg(`  - Rebuilding Stocktake allocations via Ledger Engine...`, '#fff');
+          let result = InventoryEngine.commitLedgerMath(transformedScans, DatabaseManager.db, activeAllocations, sess.workflowType);
+          DatabaseManager.db = result.updatedDb;
+          activeAllocations = result.updatedAllocations;
+
+          // ✨ THE FIX: Enforce absolute counts with strictly matched uppercase REFs
           Object.keys(scannedTotals).forEach(ref => {
-            let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref);
+            let dbItem = DatabaseManager.db.find(i => String(i.sku || i.ref || '').toUpperCase().trim() === ref);
             if (dbItem) {
-              dbItem.onHand = (dbItem.onHand || 0) + scannedTotals[ref];
+              dbItem.onHand = scannedTotals[ref]; 
               logMsg(`    = REF: ${ref} explicitly set to ${dbItem.onHand}`);
             }
           });
+          
         } else {
           logMsg(`  - Committing standard ledger adjustments (${transformedScans.length} lines)...`, '#fff');
           let result = InventoryEngine.commitLedgerMath(transformedScans, DatabaseManager.db, activeAllocations, sess.workflowType);
@@ -2415,7 +2444,10 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
         await fetch(SessionManager.getActiveArchiveUrl(), { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(dbPayload) });
         
         logMsg(`Pushing customer allocations to Google Sheets...`, '#64b5f6');
-        SessionManager.syncAllocationsToCloud();
+        
+        // ✨ THE FIX 3: Force the circuit breaker open since we are authoritatively rebuilding memory from scratch
+        sessionStorage.setItem('asp_allocations_verified', 'true');
+        await SessionManager.syncAllocationsToCloud(); // ✨ Added 'await'
       }
 
       updateProgress(`Restore Complete!`, 100);
@@ -2664,8 +2696,8 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
           return;
       }
 
-      // Filter out empty rows and bundles that don't need independent Shopify listings
-      let itemsToSync = DatabaseManager.db.filter(i => (i.ref || i.sku) && String(i.ref || i.sku).trim() !== "" && !i.parentRef);
+      /// ✨ THE FIX 1: Only push items that are NOT already synced to Shopify
+      let itemsToSync = DatabaseManager.db.filter(i => (i.ref || i.sku) && String(i.ref || i.sku).trim() !== "" && !i.parentRef && String(i.syncedShopify).toUpperCase() !== "TRUE");
       
       if (!confirm(`Are you sure you want to push all ${itemsToSync.length} master items to Shopify?\n\nThis will take several minutes to run in background batches.`)) return;
 
@@ -2702,7 +2734,7 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333;
               let response = await fetch(SessionManager.getActiveArchiveUrl(), {
                   method: 'POST',
                   headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                  body: JSON.stringify({ action: 'SYNC_SHOPIFY_SANDBOX', payload: payloadBatch })
+                  body: JSON.stringify({ action: 'SYNC_SHOPIFY', payload: payloadBatch })
               });
               let result = await response.json();
               if (result.status === 'success') successCount += payloadBatch.length;

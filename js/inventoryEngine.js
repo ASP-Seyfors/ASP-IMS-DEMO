@@ -158,7 +158,7 @@ const InventoryEngine = {
            
            let cleanLot = (item.lot === 'N/A' || item.lot === 'NA' || item.lot === 'NO_LOT') ? '' : item.lot;
            let cleanExp = (item.exp === 'N/A' || item.exp === 'NA' || item.exp === 'NO_EXP') ? '' : item.exp;
-           if (cleanExp.includes('T')) cleanExp = cleanExp.split('T')[0]; // ✨ INJECTED
+           let cleanOrder = (orderNum === 'N/A' || orderNum === 'NA') ? '' : orderNum;
 
            currentAllocations[tag][ref].details.push({
                lot: cleanLot, exp: cleanExp, orderNum: cleanOrder, sessionId: item.sessionId || '', qty: item.qty
@@ -172,7 +172,7 @@ const InventoryEngine = {
              
              let cleanLot = (item.lot === 'N/A' || item.lot === 'NA' || item.lot === 'NO_LOT') ? '' : item.lot;
              let cleanExp = (item.exp === 'N/A' || item.exp === 'NA' || item.exp === 'NO_EXP') ? '' : item.exp;
-             if (cleanExp.includes('T')) cleanExp = cleanExp.split('T')[0]; // ✨ INJECTED
+             let cleanOrder = (orderNum === 'N/A' || orderNum === 'NA') ? '' : orderNum;
 
              currentAllocations[tag][ref].details.push({
                  lot: cleanLot, exp: cleanExp, orderNum: cleanOrder, sessionId: item.sessionId || '', qty: item.qty

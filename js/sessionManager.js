@@ -750,9 +750,11 @@ const SessionManager = {
           this.addManifestRow();
         }
         
-        // ✨ NEW: If data was preloaded, skip the entry screen and jump straight to Review
+        // ✨ NEW: If data was preloaded, skip Review entirely and jump straight to Scanning
         if (isPreloaded) {
-            this.goToManifestReview();
+            localStorage.setItem('asp_active_manifest', JSON.stringify(this.expectedManifest));
+            document.getElementById('screenScanning').style.display = 'block';
+            this.updateManifestProgressUI();
         } else {
             document.getElementById('screenManifestEntry').style.display = 'block';
         }
@@ -1642,43 +1644,51 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
       
       if (rawDesc && rawDesc !== "Navigate to vendor website for item description.") {
         
-        let finalDesc = "";
-        let finalCategory = "General";
-        
         // Grab the Suture checkbox state dynamically
         let sutureChk = document.getElementById(`chkSuture_${index}`);
         let isSuture = sutureChk && sutureChk.checked;
-        let isAutoFetched = input.getAttribute('data-autofetched') === 'true'; // ✨ Check the flag
+        let isAutoFetched = input.getAttribute('data-autofetched') === 'true';
         
-        if (isSuture && isAutoFetched) {
-            // ONLY append the Box math if the AI Auto-Fetch actually worked
-            finalCategory = "Suture";
-            let lastChar = ref.slice(-1).toUpperCase();
-            let boxQtyStr = "";
-            let refBase = ref; 
+        let finalDesc = "";
+        let finalCategory = "Medical Supplies";
+        let pendingMatch = this.pendingNewItems.find(i => i.ref === ref);
+        if (pendingMatch) finalCategory = pendingMatch.category || "Medical Supplies";
+
+        if (isSuture) {
+            // ✨ BUG 3 FIX: Category becomes "Suture, [Truncated REF]"
+            let refBase = ref.slice(0, -1); 
+            finalCategory = `Suture, ${refBase}`;
             
-            if (lastChar === 'G') { boxQtyStr = "(BX/12)"; refBase = ref.slice(0, -1); }
-            else if (lastChar === 'T') { boxQtyStr = "(BX/24)"; refBase = ref.slice(0, -1); }
-            else if (lastChar === 'H') { boxQtyStr = "(BX/36)"; refBase = ref.slice(0, -1); }
-            
-            finalDesc = `${mfr} ${rawDesc} ${boxQtyStr} ${refBase}`.replace(/\s+/g, ' ').trim();
+            if (isAutoFetched) {
+                // ✨ BUG 2 FIX: Keep the box math, but append the FULL REF to the description
+                let boxQtyStr = "";
+                let lastChar = ref.slice(-1).toUpperCase();
+                if (mfr.toUpperCase().includes('ETHICON')) {
+                    if (lastChar === 'G') boxQtyStr = "(BX/12)";
+                    else if (lastChar === 'T') boxQtyStr = "(BX/24)";
+                    else if (lastChar === 'H') boxQtyStr = "(BX/36)";
+                }
+                
+                finalDesc = `${mfr} ${rawDesc} ${boxQtyStr} ${ref}`.replace(/\s+/g, ' ').trim();
+            } else {
+                // Manual Entry Suture
+                finalDesc = `${mfr} ${rawDesc} ${ref}`.replace(/\s+/g, ' ').trim();
+            }
         } else {
-            // If they typed it manually, just save what they typed
-            if (isSuture) finalCategory = "Suture"; 
+            // Standard Non-Suture Item
             finalDesc = `${mfr} ${rawDesc} ${ref}`.replace(/\s+/g, ' ').trim();
         }
         
         // Apply the new Desc and Category to the local cache memory
-        let pendingItem = this.pendingNewItems.find(i => i.ref === ref);
-        if (pendingItem) {
-            pendingItem.desc = finalDesc;
-            if (isSuture) pendingItem.category = finalCategory;
+        if (pendingMatch) {
+            pendingMatch.desc = finalDesc;
+            pendingMatch.category = finalCategory;
         }
 
         let dbItem = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === ref.toUpperCase());
         if (dbItem) {
             dbItem.desc = finalDesc;
-            if (isSuture) dbItem.category = finalCategory;
+            dbItem.category = finalCategory;
         }
 
         this.scannedObjects.forEach(scanned => {
@@ -1794,27 +1804,92 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
 
         let currentAllocations = JSON.parse(localStorage.getItem('asp_allocations')) || {};
 
-        // ✨ THE FIX: Removed the buggy manual loop and handed full control back to the mathematically bulletproof InventoryEngine
+        // ✨ THE FIX: Skip this manual loop during Stocktakes, because commitStocktake already perfectly built the array! 
+        // This stops completeSession from stacking duplicate entries on top of the Stocktake ones.
+        if (!this.currentWorkflowType.includes('Stocktake')) {
+            this.scannedObjects.forEach(item => {
+              // Inherit the tag from the manifest if doing a Pick & Pack
+              if (this.currentWorkflowType.includes('Packing') && this.isManifestEnabled) {
+                 let manifestItem = this.expectedManifest.find(m => m.ref === item.ref.toUpperCase());
+                 if (manifestItem && manifestItem.allocations && manifestItem.allocations.length > 0) { 
+                     item.customerTag = manifestItem.allocations[0].customerTag; 
+                 }
+              }
+
+              if (item.actionTag === 'Reserved' && item.customerTag) {
+                  let tag = item.customerTag.split(' - ')[0].trim().toUpperCase();
+                  let ref = item.ref.toUpperCase();
+                  
+                  if (!currentAllocations[tag]) currentAllocations[tag] = {};
+                  if (!currentAllocations[tag][ref]) currentAllocations[tag][ref] = { qty: 0, details: [] };
+                  
+                  let cleanLot = (item.lot === 'NO_LOT' || item.lot === 'N/A' || item.lot === 'NA') ? '' : item.lot;
+                  let cleanExp = (item.exp === 'NO_EXP' || item.exp === 'N/A' || item.exp === 'NA') ? '' : item.exp;
+                  if (cleanExp.includes('T')) cleanExp = cleanExp.split('T')[0];
+                  
+                  currentAllocations[tag][ref].qty += item.qty;
+                  currentAllocations[tag][ref].details.push({
+                      lot: cleanLot,
+                      exp: cleanExp,
+                      qty: item.qty,
+                      orderNum: item.orderNum || '',
+                      sessionId: item.sessionId || this.sessionId
+                  });
+              } else if (item.actionTag === 'Pack & Ship' && item.customerTag) {
+                  let tag = item.customerTag.split(' - ')[0].trim().toUpperCase();
+                  let ref = item.ref.toUpperCase();
+                  
+                  if (currentAllocations[tag] && currentAllocations[tag][ref]) {
+                      let itemData = currentAllocations[tag][ref];
+                      
+                      if (itemData.details && itemData.details.length > 0) {
+                          let cleanLot = (item.lot === 'NO_LOT' || item.lot === 'N/A' || item.lot === 'NA') ? '' : item.lot;
+                          let cleanExp = (item.exp === 'NO_EXP' || item.exp === 'N/A' || item.exp === 'NA') ? '' : item.exp;
+                          if (cleanExp.includes('T')) cleanExp = cleanExp.split('T')[0];
+                          
+                          let detMatch = itemData.details.find(d => d.lot === cleanLot && d.exp === cleanExp);
+                          if (detMatch) {
+                              detMatch.qty -= item.qty;
+                              if (detMatch.qty <= 0) itemData.details = itemData.details.filter(d => d !== detMatch);
+                          } else if (itemData.details[0]) {
+                              itemData.details[0].qty -= item.qty;
+                              if (itemData.details[0].qty <= 0) itemData.details.shift();
+                          }
+                      }
+                      
+                      if (typeof itemData === 'object') {
+                          itemData.qty -= item.qty;
+                          if (itemData.qty <= 0) delete currentAllocations[tag][ref];
+                      } else {
+                          currentAllocations[tag][ref] -= item.qty;
+                          if (currentAllocations[tag][ref] <= 0) delete currentAllocations[tag][ref];
+                      }
+                      
+                      if (Object.keys(currentAllocations[tag]).length === 0) delete currentAllocations[tag];
+                  }
+              }
+            });
+        }
+
+        // Execute DB updates separately
+        if (this.pendingNewItems && this.pendingNewItems.length > 0) {
+          this.pendingNewItems.forEach(newItem => { 
+            let exists = DatabaseManager.db.find(i => (i.sku || i.ref || '').toUpperCase() === (newItem.ref || newItem.sku || '').toUpperCase()); 
+            if (!exists) DatabaseManager.db.push(newItem); 
+          });
+        }
+
         let ledgerResult;
         if (this.currentWorkflowType.includes('Stocktake')) {
             ledgerResult = { updatedDb: DatabaseManager.db };
         } else {
-            this.scannedObjects.forEach(item => {
-                // Inherit the tag from the manifest if doing a Pick & Pack
-                if (this.currentWorkflowType.includes('Packing') && this.isManifestEnabled) {
-                    let manifestItem = this.expectedManifest.find(m => m.ref === item.ref.toUpperCase());
-                    if (manifestItem && manifestItem.allocations && manifestItem.allocations.length > 0) {
-                        item.customerTag = manifestItem.allocations[0].customerTag;
-                    }
-                }
-            });
-            
-            // Pass the REAL currentAllocations array to the engine, not a dummy clone!
-            ledgerResult = InventoryEngine.commitLedgerMath(this.scannedObjects, DatabaseManager.db, currentAllocations, this.currentWorkflowType);
+            // ✨ THE FIX: Create a Dummy Clone to block the engine from duplicating the allocations array!
+            let dummyAllocationsForEngine = JSON.parse(JSON.stringify(currentAllocations));
+            ledgerResult = InventoryEngine.commitLedgerMath(this.scannedObjects, DatabaseManager.db, dummyAllocationsForEngine, this.currentWorkflowType);
         }
 
-        // Save the resulting structurally perfect Allocations object generated by the Engine
-        localStorage.setItem('asp_allocations', JSON.stringify(this.currentWorkflowType.includes('Stocktake') ? currentAllocations : ledgerResult.updatedAllocations));
+        // We explicitly use our manually crafted Allocations object here to guarantee the payload is formatted safely for Google!
+        localStorage.setItem('asp_allocations', JSON.stringify(currentAllocations));
 
         if (this.pendingFieldUpdates && this.pendingFieldUpdates.length > 0) {
           this.pendingFieldUpdates.forEach(update => { 
@@ -1907,6 +1982,10 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
         this.pendingNewItems = []; this.pendingFieldUpdates = [];
         localStorage.setItem('asp_pending_new_items', JSON.stringify([])); 
         localStorage.setItem('asp_pending_updates', JSON.stringify([]));
+        
+        // ✨ WAREHOUSE BUG FIX: Wipe the active manifest so it doesn't accumulate on the next order!
+        this.expectedManifest = [];
+        localStorage.setItem('asp_active_manifest', JSON.stringify([]));
         
         let recList = document.getElementById('manifestReconcileList');
         let recCard = document.getElementById('manifestReconcileCard');
@@ -2338,23 +2417,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
 
     this.scannedObjects[index].qty = newQty;
     this.scannedObjects[index].customerTag = newTag;
-    
-    // ✨ THE FIX: Respect the current workflow when assigning the action tag during a manual summary edit
-    if (newTag) {
-        if (this.currentWorkflowType.includes('Packing')) {
-            this.scannedObjects[index].actionTag = 'Pack & Ship';
-        } else if (this.currentWorkflowType.includes('Un-Reserve')) {
-            this.scannedObjects[index].actionTag = 'Un-Reserve';
-        } else {
-            this.scannedObjects[index].actionTag = 'Reserved';
-        }
-    } else {
-        if (this.currentWorkflowType.includes('Packing')) {
-            this.scannedObjects[index].actionTag = 'Pack & Ship';
-        } else {
-            this.scannedObjects[index].actionTag = 'Inventory';
-        }
-    }
+    if (newTag) this.scannedObjects[index].actionTag = 'Reserved';
 
     localStorage.setItem('asp_session_scanned_objects', JSON.stringify(this.scannedObjects));
     this.updateManifestProgressUI();
@@ -2736,7 +2799,7 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
               itemData.details.forEach((det) => {
                   if (det.qty > 0) {
                       html += `
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #eee;">
+                        <div class="unreserve-item-row" style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #eee;">
                           <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
                             <input type="checkbox" class="unreserve-chk" data-ref="${ref}" data-lot="${det.lot || ''}" data-exp="${det.exp || ''}" data-session="${det.sessionId || ''}" data-max="${det.qty}"> 
                             <div>
@@ -2798,9 +2861,14 @@ REF [Tab] Quantity [Tab] Lot [Tab] Exp`;
               let sessionId = chk.getAttribute('data-session');
               let maxQty = parseInt(chk.getAttribute('data-max'), 10) || 0;
               
-              // Safely grab the desired quantity from the input box
-              let qtyInput = document.getElementById(`unresQty_${ref}_${sessionId}`);
+              // ✨ WAREHOUSE BUG FIX: Traverse the DOM relative to the checkbox to safely grab the exact number typed
+              let rowWrapper = chk.closest('.unreserve-item-row');
+              let qtyInput = rowWrapper ? rowWrapper.querySelector('input[type="number"]') : null;
               let unresQty = qtyInput ? parseInt(qtyInput.value, 10) : maxQty;
+              
+              // Prevent them from un-reserving more than what actually exists
+              if (isNaN(unresQty) || unresQty <= 0) return;
+              if (unresQty > maxQty) unresQty = maxQty;
               
               // Prevent them from un-reserving more than what actually exists
               if (isNaN(unresQty) || unresQty <= 0) return;

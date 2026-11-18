@@ -4,8 +4,8 @@
   "description": "Allied Surgical Products Demo Application",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#cf0452",
-  "theme_color": "#cf0452",
+  "background_color": "#f1d84a",
+  "theme_color": "#f1d84a",
   "icons": [
     {
       "src": "3D_ASP_192_Icon_DEMO.png",

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'asp-ims-demo-v7.2.0';
+const CACHE_NAME = 'asp-ims-demo-v7.2.1';
 
 
 const ASSETS_TO_CACHE = [
@@ -6,9 +6,6 @@ const ASSETS_TO_CACHE = [
   './index.html',
   './database.json',
   './ASP_Box_Web_RGB_DEMO.png',
-  './ASP_Icon_192_DEMO.png',
-  './ASP_Icon_512_DEMO.png',
-  './Gemini_3D_ASP_Logo_DEMO.png',
   './ASP_Signature_Logo_DEMO.png',
   './3D_ASP_Logo_DEMO.png',
   './3D_ASP_192_Icon_DEMO.png',

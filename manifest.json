@@ -1,19 +1,19 @@
 {
-  "name": "ASP IMS (DEV) v7.2.0",
-  "short_name": "ASP DEV",
-  "description": "Allied Surgical Products Development",
+  "name": "ASP IMS (DEMO) v7.2.0",
+  "short_name": "ASP DEMO",
+  "description": "Allied Surgical Products Demo Application",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#cf0452",
   "theme_color": "#cf0452",
   "icons": [
     {
-      "src": "3D_ASP_192_Icon_DEV.png",
+      "src": "3D_ASP_192_Icon_DEMO.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "3D_ASP_512_Icon_DEV.png",
+      "src": "3D_ASP_512_Icon_DEMO.png",
       "sizes": "512x512",
       "type": "image/png"
     }
